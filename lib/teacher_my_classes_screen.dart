@@ -267,4 +267,150 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
       ),
     );
   }
+
+  void _showScheduleClassDialog(String classCode) {
+    String selectedDay = '';
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+
+    // List of days for the dropdown
+    final List<String> daysOfWeek = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Schedule Class'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Day',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: daysOfWeek.map((String day) {
+                        return DropdownMenuItem<String>(
+                          value: day,
+                          child: Text(day),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          selectedDay = value ?? '';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    ListTile(
+                      title: const Text('Start Time'),
+                      subtitle: Text(
+                        startTime != null
+                            ? '${startTime!.hour}:${startTime!.minute.toString().padLeft(2, '0')}'
+                            : 'Select Start Time',
+                      ),
+                      onTap: () async {
+                        final pickedTime = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+                        if (pickedTime != null) {
+                          setState(() {
+                            startTime = pickedTime;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    ListTile(
+                      title: const Text('End Time'),
+                      subtitle: Text(
+                        endTime != null
+                            ? '${endTime!.hour}:${endTime!.minute.toString().padLeft(2, '0')}'
+                            : 'Select End Time',
+                      ),
+                      onTap: () async {
+                        final pickedTime = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+                        if (pickedTime != null) {
+                          setState(() {
+                            endTime = pickedTime;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedDay.isNotEmpty &&
+                        startTime != null &&
+                        endTime != null) {
+                      // Format the time as HH:MM
+                      final formattedStartTime =
+                          '${startTime!.hour}:${startTime!.minute.toString().padLeft(2, '0')}';
+                      final formattedEndTime =
+                          '${endTime!.hour}:${endTime!.minute.toString().padLeft(2, '0')}';
+
+                      try {
+                        // First, get the class details
+                        final classDoc = await _firestore
+                            .collection('classes')
+                            .doc(classCode)
+                            .get();
+
+                        if (classDoc.exists) {
+                          final classData =
+                              classDoc.data() as Map<String, dynamic>;
+
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Class scheduled successfully')),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Class details not found')),
+                          );
+                        }
+                      } catch (error) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error: $error')),
+                        );
+                      }
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please fill all fields')),
+                      );
+                    }
+                  },
+                  child: const Text('Schedule'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 }
