@@ -1,6 +1,5 @@
 import 'dart:convert';
-import 'dart:nativewrappers/_internal/vm/lib/internal_patch.dart';
-
+import 'package:ams/services/schedule.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -201,67 +200,91 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    program,
-                    style: GoogleFonts.golosText(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue[800],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Subject: $subject',
-                    style: GoogleFonts.golosText(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  Text(
-                    'Class Code: $classCode',
-                    style: GoogleFonts.golosText(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  Text(
-                    '👥 $studentCount Students Enrolled',
-                    style: GoogleFonts.golosText(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
+              Text(
+                program,
+                style: GoogleFonts.golosText(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[800],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              Spacer(),
-              InkWell(
-                onTap: () {
-                  showDialog(
+              const SizedBox(height: 8),
+              Text(
+                'Subject: $subject',
+                style: GoogleFonts.golosText(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              Text(
+                'Class Code: $classCode',
+                style: GoogleFonts.golosText(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              Text(
+                '👥 $studentCount Students Enrolled',
+                style: GoogleFonts.golosText(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // "Schedule Class" Button
+              TextButton(
+                onPressed: () {
+                  _showDialogBox(classCode, classId);
+                },
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.blue[800],
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(
+                  'Schedule Class',
+                  style: GoogleFonts.golosText(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+
+              Align(
+                alignment: Alignment.centerRight,
+                child: InkWell(
+                  onTap: () {
+                    showDialog(
                       context: context,
                       builder: (_) => Center(
-                            child: Container(
-                              color: Colors.white,
-                              padding: EdgeInsets.all(8),
-                              child: QrImageView(
-                                data: jsonEncode({"join": classId}),
-                                version: QrVersions.auto,
-                                size: 200.0,
-                              ),
-                            ),
-                          ));
-                },
-                child: Icon(
-                  Icons.qr_code,
-                  size: 32,
+                        child: Container(
+                          color: Colors.white,
+                          padding: EdgeInsets.all(8),
+                          child: QrImageView(
+                            data: jsonEncode({"join": classId}),
+                            version: QrVersions.auto,
+                            size: 200.0,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Icon(
+                    Icons.qr_code,
+                    size: 32,
+                  ),
                 ),
-              )
+              ),
             ],
           ),
         ),
@@ -269,13 +292,14 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
     );
   }
 
-  void _showScheduleClassDialog(String classCode) {
+  void _showDialogBox(
+    String classCode,
+    String classId,
+  ) {
     String selectedDay = '';
     TimeOfDay? startTime;
     TimeOfDay? endTime;
-    String classId;
 
-    // List of days for the dropdown
     final List<String> daysOfWeek = [
       'Monday',
       'Tuesday',
@@ -373,33 +397,8 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
                       final formattedEndTime =
                           '${endTime!.hour}:${endTime!.minute.toString().padLeft(2, '0')}';
 
-                      try {
-                        // First, get the class details
-                        final classDoc = await _firestore
-                            .collection('classes')
-                            .doc(classCode)
-                            .get();
-
-                        if (classDoc.exists) {
-                          final classData =
-                              classDoc.data() as Map<String, dynamic>;
-
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Class scheduled successfully')),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Class details not found')),
-                          );
-                        }
-                      } catch (error) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $error')),
-                        );
-                      }
+                      addSchedule(classId, selectedDay, formattedStartTime,
+                          formattedEndTime);
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Please fill all fields')),
