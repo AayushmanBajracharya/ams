@@ -336,7 +336,7 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (selectedDay.isNotEmpty &&
                         startTime != null &&
                         endTime != null) {
@@ -346,24 +346,33 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
                       final formattedEndTime =
                           '${endTime!.hour}:${endTime!.minute.toString().padLeft(2, '0')}';
 
-                      // Save the schedule to Firestore under the specific class
-                      _firestore.collection('classes').doc(classCode).update({
-                        'schedule': {
-                          'day': selectedDay,
-                          'startTime': formattedStartTime,
-                          'endTime': formattedEndTime,
-                        },
-                      }).then((_) {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Class scheduled successfully')),
-                        );
-                      }).catchError((error) {
+                      try {
+                        // First, get the class details
+                        final classDoc = await _firestore
+                            .collection('classes')
+                            .doc(classCode)
+                            .get();
+
+                        if (classDoc.exists) {
+                          final classData =
+                              classDoc.data() as Map<String, dynamic>;
+
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Class scheduled successfully')),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Class details not found')),
+                          );
+                        }
+                      } catch (error) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Error: $error')),
                         );
-                      });
+                      }
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Please fill all fields')),

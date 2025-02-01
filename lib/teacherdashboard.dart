@@ -26,6 +26,48 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
     _loadUserData();
   }
 
+  Future<String> _getCurrentDay() {
+    final days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
+    final now = DateTime.now();
+    return Future.value(days[now.weekday - 1]);
+  }
+
+  String _formatTimeString(String timeString) {
+    try {
+      final parts = timeString.split(':');
+      final hour = int.parse(parts[0]);
+      final minute = parts[1];
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final formatted = '${(hour > 12 ? hour - 12 : hour)}:$minute $period';
+      return formatted;
+    } catch (e) {
+      return timeString;
+    }
+  }
+
+  Future<String> _getClassName(String classId) async {
+    try {
+      DocumentSnapshot classDoc =
+          await _firestore.collection('classes').doc(classId).get();
+      if (classDoc.exists) {
+        Map<String, dynamic> data = classDoc.data() as Map<String, dynamic>;
+        return data['className'] ?? 'Unknown Class';
+      }
+      return 'Unknown Class';
+    } catch (e) {
+      debugPrint('Error fetching class name: $e');
+      return 'Unknown Class';
+    }
+  }
+
   Future<int> _getNumberOfClassesCreated() async {
     try {
       User? user = _auth.currentUser;
@@ -38,10 +80,10 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
           .where('teacherId', isEqualTo: user.uid)
           .get();
 
-      return classData.size; // Return the number of classes
+      return classData.size;
     } catch (e) {
       debugPrint('Error fetching classes: $e');
-      return 0; // Return 0 in case of error
+      return 0;
     }
   }
 
@@ -51,21 +93,18 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
       if (user != null) {
         _email = user.email ?? '';
 
-        // Get user data from Firestore
         DocumentSnapshot userData =
             await _firestore.collection('users').doc(user.uid).get();
 
         if (userData.exists) {
           setState(() {
             _username = userData.get('username') ?? 'Teacher';
-            // Only update email if not already set from Firebase Auth
             if (_email.isEmpty) {
               _email = userData.get('email') ?? '';
             }
           });
         }
       } else {
-        // If no user is logged in, redirect to login screen
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/login');
         }
@@ -75,18 +114,42 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
     }
   }
 
-  Future<void> _handleLogout() async {
-    try {
-      await _auth.signOut();
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/login');
-      }
-    } catch (e) {
-      debugPrint('Error signing out: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error signing out. Please try again.')),
-      );
-    }
+  Widget _buildDashboardCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 40, color: color),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: GoogleFonts.golosText(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.golosText(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -146,12 +209,11 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
               leading: const Icon(Icons.class_),
               title: const Text('My Classes'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        const TeacherMyClass(), // Navigate to the new screen
+                    builder: (context) => const TeacherMyClass(),
                   ),
                 );
               },
@@ -163,7 +225,8 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (context) => const TeacherScheduleScreen()),
+                      builder: (context) => const TeacherScheduleScreen(),
+                    ),
                   );
                 }),
             ListTile(
@@ -174,8 +237,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        MessageScreen(), // Navigate to MessageScreen
+                    builder: (context) => MessageScreen(),
                   ),
                 );
               },
@@ -188,11 +250,9 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        ProfilePage(), // Correct instantiation
+                    builder: (context) => ProfilePage(),
                   ),
                 );
-                // Add navigation
               },
             ),
           ],
@@ -227,8 +287,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                 }
 
                 return FutureBuilder<int>(
-                  future:
-                      _getNumberOfClassesCreated(), // Call the function to get the class count
+                  future: _getNumberOfClassesCreated(),
                   builder: (context, classSnapshot) {
                     if (classSnapshot.connectionState ==
                         ConnectionState.waiting) {
@@ -239,7 +298,6 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                       return const Text('Error loading class data');
                     }
 
-                    // Get the number of classes
                     final int numberOfClasses = classSnapshot.data ?? 0;
 
                     return GridView.count(
@@ -252,8 +310,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                         _buildDashboardCard(
                           icon: Icons.class_,
                           title: 'My Classes',
-                          value:
-                              '$numberOfClasses', // Show the number of classes created
+                          value: '$numberOfClasses',
                           color: Colors.blue,
                         ),
                         _buildDashboardCard(
@@ -287,55 +344,172 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Today\'s Schedule',
-                      style: GoogleFonts.golosText(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Class Schedule',
+                          style: GoogleFonts.golosText(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const TeacherScheduleScreen(),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            'View All',
+                            style: GoogleFonts.golosText(
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
-                    const Text('No classes scheduled for today'),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: _firestore
+                          .collection('schedule')
+                          .where('teacherId', isEqualTo: _auth.currentUser?.uid)
+                          .orderBy('startTime')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Text('Error loading schedule'),
+                            ),
+                          );
+                        }
+
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    size: 48,
+                                    color: Colors.grey[400],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No classes scheduled',
+                                    style: GoogleFonts.golosText(
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: snapshot.data!.docs.length,
+                          itemBuilder: (context, index) {
+                            final scheduleData = snapshot.data!.docs[index]
+                                .data() as Map<String, dynamic>;
+                            final classId = scheduleData['classId'] as String;
+
+                            return FutureBuilder<String>(
+                              future: _getClassName(classId),
+                              builder: (context, classNameSnapshot) {
+                                if (classNameSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Card(
+                                    child: ListTile(
+                                      title: Text('Loading class details...'),
+                                    ),
+                                  );
+                                }
+
+                                final className =
+                                    classNameSnapshot.data ?? 'Unknown Class';
+
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8.0),
+                                  child: ListTile(
+                                    leading: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue[100],
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.class_,
+                                        color: Colors.blue[800],
+                                      ),
+                                    ),
+                                    title: Text(
+                                      className,
+                                      style: GoogleFonts.golosText(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          scheduleData['subject'] ??
+                                              'No Subject',
+                                          style: GoogleFonts.golosText(
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        Text(
+                                          scheduleData['day'] ?? 'No Day Set',
+                                          style: GoogleFonts.golosText(
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        Text(
+                                          '${_formatTimeString(scheduleData['startTime'])} - ${_formatTimeString(scheduleData['endTime'])}',
+                                          style: GoogleFonts.golosText(
+                                            color: Colors.blue[800],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    trailing: Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 16,
+                                      color: Colors.grey[400],
+                                    ),
+                                    onTap: () {
+                                      // Navigate to class details or take attendance
+                                      // You can use classId here for navigation
+                                    },
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ],
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDashboardCard({
-    required IconData icon,
-    required String title,
-    required String value,
-    required Color color,
-  }) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: color),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: GoogleFonts.golosText(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.golosText(
-                fontSize: 14,
-                color: Colors.grey[600],
               ),
             ),
           ],
