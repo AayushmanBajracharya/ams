@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "57655670337",
+    "project_id": "attendence-management-sy-9d181",
+    "storage_bucket": "attendence-management-sy-9d181.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:57655670337:android:d3e7b584e43a07ff1ff8c0",
+        "android_client_info": {
+          "package_name": "com.example.ams"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCq3ndNpY6p-OSwsaA-PK0a5UBncWL0HOo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
