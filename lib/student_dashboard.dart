@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:ams/main.dart';
 import 'package:ams/qr_scanner.dart';
+import 'package:ams/services/schedule.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -41,11 +42,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
         if (userData.exists) {
           // Debugging: Print the entire document data
           debugPrint("User data retrieved: ${userData.data()}");
-
+          _enrolledClasses = await getEnrolledClasses();
           setState(() {
             _username = userData.get('username') ?? 'Student';
             _email = userData.get('email') ?? user.email;
-            getEnrolledClasses();
             // _enrolledClasses = List<Map<String, dynamic>>.from(
             //     userData.get('enrolledClasses') ?? []);
           });
@@ -59,18 +59,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
       }
     } catch (e) {
       debugPrint('Error loading user data: $e');
-    }
-  }
-
-  getEnrolledClasses() async {
-    QuerySnapshot classes = await firestore.collection('classes').get();
-    String my = auth.currentUser!.uid;
-    log("classes: ${classes.docs}");
-    for (QueryDocumentSnapshot classSnap in classes.docs) {
-      var studentsInClass = classSnap.get("students");
-      if (studentsInClass.contains(my)) {
-        _enrolledClasses.add(classSnap.id);
-      }
     }
   }
 
