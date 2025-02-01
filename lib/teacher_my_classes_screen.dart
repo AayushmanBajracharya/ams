@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:nativewrappers/_internal/vm/lib/internal_patch.dart';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -272,6 +273,7 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
     String selectedDay = '';
     TimeOfDay? startTime;
     TimeOfDay? endTime;
+    String classId;
 
     // List of days for the dropdown
     final List<String> daysOfWeek = [
