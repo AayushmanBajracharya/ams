@@ -249,12 +249,23 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 16,
                       children: [
-                        _buildDashboardCard(
-                          icon: Icons.class_,
-                          title: 'My Classes',
-                          value:
-                              '$numberOfClasses', // Show the number of classes created
-                          color: Colors.blue,
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const TeacherMyClass(), // Navigate to the new screen
+                              ),
+                            );
+                          },
+                          child: _buildDashboardCard(
+                            icon: Icons.class_,
+                            title: 'My Classes',
+                            value:
+                                '$numberOfClasses', // Show the number of classes created
+                            color: Colors.blue,
+                          ),
                         ),
                         _buildDashboardCard(
                           icon: Icons.people,

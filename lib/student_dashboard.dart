@@ -1,5 +1,7 @@
 import 'dart:developer';
 
+import 'package:ams/main.dart';
+import 'package:ams/qr_scanner.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,11 +19,9 @@ class StudentDashboard extends StatefulWidget {
 }
 
 class _StudentDashboardState extends State<StudentDashboard> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String _username = '';
   String _email = '';
-  List<Map<String, dynamic>> _enrolledClasses = [];
+  List<String> _enrolledClasses = [];
 
   @override
   void initState() {
@@ -31,12 +31,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Future<void> _loadUserData() async {
     try {
-      User? user = _auth.currentUser;
+      User? user = auth.currentUser;
       if (user != null) {
         _email = user.email ?? '';
 
         DocumentSnapshot userData =
-            await _firestore.collection('users').doc(user.uid).get();
+            await firestore.collection('users').doc(user.uid).get();
 
         if (userData.exists) {
           // Debugging: Print the entire document data
@@ -45,8 +45,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
           setState(() {
             _username = userData.get('username') ?? 'Student';
             _email = userData.get('email') ?? user.email;
-            _enrolledClasses = List<Map<String, dynamic>>.from(
-                userData.get('enrolledClasses') ?? []);
+            getEnrolledClasses();
+            // _enrolledClasses = List<Map<String, dynamic>>.from(
+            //     userData.get('enrolledClasses') ?? []);
           });
 
           debugPrint("Username set to: $_username"); // Debugging
@@ -61,9 +62,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
+  getEnrolledClasses() async {
+    QuerySnapshot classes = await firestore.collection('classes').get();
+    String my = auth.currentUser!.uid;
+    log("classes: ${classes.docs}");
+    for (QueryDocumentSnapshot classSnap in classes.docs) {
+      var studentsInClass = classSnap.get("students");
+      if (studentsInClass.contains(my)) {
+        _enrolledClasses.add(classSnap.id);
+      }
+    }
+  }
+
   Future<void> _handleLogout() async {
     try {
-      await _auth.signOut();
+      await auth.signOut();
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
       }
@@ -73,163 +86,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
         const SnackBar(content: Text('Error signing out. Please try again.')),
       );
     }
-  }
-
-  void _showJoinClassDialog() {
-    TextEditingController subjectController = TextEditingController();
-    TextEditingController classCodeController = TextEditingController();
-    TextEditingController programController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(
-            'Join a Class',
-            style: GoogleFonts.golosText(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.blue[800],
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: programController,
-                decoration: InputDecoration(
-                  labelText: 'Program',
-                  labelStyle: GoogleFonts.golosText(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: subjectController,
-                decoration: InputDecoration(
-                  labelText: 'Subject',
-                  labelStyle: GoogleFonts.golosText(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: classCodeController,
-                decoration: InputDecoration(
-                  labelText: 'Class Code',
-                  labelStyle: GoogleFonts.golosText(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.golosText(
-                  color: Colors.red,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                String subject = subjectController.text.trim();
-                String classCode = classCodeController.text.trim();
-                String program = programController.text.trim();
-
-                if (subject.isNotEmpty &&
-                    classCode.isNotEmpty &&
-                    program.isNotEmpty) {
-                  try {
-                    // Check if the class exists in the database
-                    QuerySnapshot classSnapshot = await _firestore
-                        .collection('classes')
-                        .where('subject', isEqualTo: subject)
-                        .where('classCode', isEqualTo: classCode)
-                        .where('program', isEqualTo: program)
-                        .get();
-
-                    if (classSnapshot.docs.isNotEmpty) {
-                      // Class exists, add it to the user's enrolled classes
-                      User? user = _auth.currentUser;
-                      if (user != null) {
-                        await _firestore
-                            .collection('users')
-                            .doc(user.uid)
-                            .update({
-                          'enrolledClasses': FieldValue.arrayUnion([
-                            {
-                              'subject': subject,
-                              'classCode': classCode,
-                              'program': program,
-                            }
-                          ]),
-                        });
-
-                        setState(() {
-                          _enrolledClasses.add({
-                            'subject': subject,
-                            'classCode': classCode,
-                            'program': program,
-                          });
-                        });
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Successfully joined $subject',
-                              style: GoogleFonts.golosText(),
-                            ),
-                          ),
-                        );
-
-                        Navigator.of(context).pop();
-                      }
-                    } else {
-                      // Class does not exist
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Class does not exist. Please check the subject, class code, and program.',
-                            style: GoogleFonts.golosText(),
-                          ),
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    debugPrint('Error joining class: $e');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Error joining class. Please try again.',
-                          style: GoogleFonts.golosText(),
-                        ),
-                      ),
-                    );
-                  }
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Please fill in all fields',
-                        style: GoogleFonts.golosText(),
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: Text(
-                'Join',
-                style: GoogleFonts.golosText(
-                  color: Colors.blue[800],
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   @override
@@ -363,7 +219,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
             const SizedBox(height: 20),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('classes').snapshots(),
+              stream: firestore.collection('classes').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Text('Error: ${snapshot.error}');
@@ -373,15 +229,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   return const CircularProgressIndicator();
                 }
 
-                List<DocumentSnapshot> activeClasses =
-                    snapshot.data?.docs ?? [];
-
-                int activeEnrolledClasses = activeClasses.where((classDoc) {
-                  Map<String, dynamic> classData =
-                      classDoc.data() as Map<String, dynamic>;
-                  return _enrolledClasses.any((enrolledClass) =>
-                      enrolledClass['classCode'] == classData['classCode']);
-                }).length;
+                // int activeEnrolledClasses = activeClasses.where((classDoc) {
+                //   Map<String, dynamic> classData =
+                //       classDoc.data() as Map<String, dynamic>;
+                //   return _enrolledClasses.any((enrolledClass) =>
+                //       enrolledClass['classCode'] == classData['classCode']);
+                // }).length;
 
                 return GridView.count(
                   shrinkWrap: true,
@@ -396,12 +249,12 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       value: _enrolledClasses.length.toString(),
                       color: Colors.blue,
                     ),
-                    _buildDashboardCard(
-                      icon: Icons.class_,
-                      title: 'Active Classes',
-                      value: activeEnrolledClasses.toString(),
-                      color: Colors.orange,
-                    ),
+                    // _buildDashboardCard(
+                    //   icon: Icons.class_,
+                    //   title: 'Active Classes',
+                    //   value: activeEnrolledClasses.toString(),
+                    //   color: Colors.orange,
+                    // ),
                     _buildDashboardCard(
                       icon: Icons.people,
                       title: 'Classmates',
@@ -442,8 +295,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showJoinClassDialog,
-        child: const Icon(Icons.add),
+        onPressed: () {
+          Navigator.push(
+              context, MaterialPageRoute(builder: (_) => QRScanner()));
+        },
+        child: const Icon(Icons.qr_code_scanner),
       ),
     );
   }

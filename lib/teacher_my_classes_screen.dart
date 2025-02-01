@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class TeacherMyClass extends StatefulWidget {
   const TeacherMyClass({super.key});
@@ -65,6 +68,7 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
                   classData['subject'] ?? 'No Subject',
                   classData['classCode'] ?? 'No Code',
                   (classData['students'] as List<dynamic>?)?.length ?? 0,
+                  snapshot.data!.docs[index].id,
                   () {
                     // TODO: Implement navigation to class details
                   },
@@ -183,6 +187,7 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
     String subject,
     String classCode,
     int studentCount,
+    String classId,
     VoidCallback onTap,
   ) {
     return Card(
@@ -195,41 +200,67 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                program,
-                style: GoogleFonts.golosText(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue[800],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    program,
+                    style: GoogleFonts.golosText(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[800],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Subject: $subject',
+                    style: GoogleFonts.golosText(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  Text(
+                    'Class Code: $classCode',
+                    style: GoogleFonts.golosText(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  Text(
+                    '👥 $studentCount Students Enrolled',
+                    style: GoogleFonts.golosText(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Subject: $subject',
-                style: GoogleFonts.golosText(
-                  fontSize: 14,
-                  color: Colors.grey[600],
+              Spacer(),
+              InkWell(
+                onTap: () {
+                  showDialog(
+                      context: context,
+                      builder: (_) => Center(
+                            child: Container(
+                              color: Colors.white,
+                              padding: EdgeInsets.all(8),
+                              child: QrImageView(
+                                data: jsonEncode({"join": classId}),
+                                version: QrVersions.auto,
+                                size: 200.0,
+                              ),
+                            ),
+                          ));
+                },
+                child: Icon(
+                  Icons.qr_code,
+                  size: 32,
                 ),
-              ),
-              Text(
-                'Class Code: $classCode',
-                style: GoogleFonts.golosText(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              Text(
-                '👥 $studentCount Students Enrolled',
-                style: GoogleFonts.golosText(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
+              )
             ],
           ),
         ),

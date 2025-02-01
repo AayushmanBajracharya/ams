@@ -1,4 +1,6 @@
 import 'package:ams/loading_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -24,6 +26,9 @@ void main() async {
   runApp(const MyApp());
 }
 
+final FirebaseFirestore firestore = FirebaseFirestore.instance;
+final FirebaseAuth auth = FirebaseAuth.instance;
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -47,7 +52,6 @@ class MyApp extends StatelessWidget {
         '/teacher-dashboard': (context) => const TeacherDashBoard(),
         '/student-dashboard': (context) => const StudentDashboard(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
-        // Add this route
       },
     );
   }
