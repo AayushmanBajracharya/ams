@@ -1,3 +1,4 @@
+import 'package:ams/dummy/schedule.dart';
 import 'package:ams/teacher_schedule_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,6 +20,10 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String _username = '';
   String _email = '';
+  List<Map<String, dynamic>> mySchedule = [];
+  getMySchedule() {
+    mySchedule = scheduleData;
+  }
 
   @override
   void initState() {
@@ -386,140 +391,15 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    StreamBuilder<QuerySnapshot>(
-                      stream: _firestore
-                          .collection('schedule')
-                          .where('teacherId', isEqualTo: _auth.currentUser?.uid)
-                          .orderBy('startTime')
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return const Card(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: Text('Error loading schedule'),
-                            ),
-                          );
-                        }
-
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                          return Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_today,
-                                    size: 48,
-                                    color: Colors.grey[400],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'No classes scheduled',
-                                    style: GoogleFonts.golosText(
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: snapshot.data!.docs.length,
-                          itemBuilder: (context, index) {
-                            final scheduleData = snapshot.data!.docs[index]
-                                .data() as Map<String, dynamic>;
-                            final classId = scheduleData['classId'] as String;
-
-                            return FutureBuilder<String>(
-                              future: _getClassName(classId),
-                              builder: (context, classNameSnapshot) {
-                                if (classNameSnapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Card(
-                                    child: ListTile(
-                                      title: Text('Loading class details...'),
-                                    ),
-                                  );
-                                }
-
-                                final className =
-                                    classNameSnapshot.data ?? 'Unknown Class';
-
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 8.0),
-                                  child: ListTile(
-                                    leading: Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue[100],
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        Icons.class_,
-                                        color: Colors.blue[800],
-                                      ),
-                                    ),
-                                    title: Text(
-                                      className,
-                                      style: GoogleFonts.golosText(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          scheduleData['subject'] ??
-                                              'No Subject',
-                                          style: GoogleFonts.golosText(
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                        Text(
-                                          scheduleData['day'] ?? 'No Day Set',
-                                          style: GoogleFonts.golosText(
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                        Text(
-                                          '${_formatTimeString(scheduleData['startTime'])} - ${_formatTimeString(scheduleData['endTime'])}',
-                                          style: GoogleFonts.golosText(
-                                            color: Colors.blue[800],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    trailing: Icon(
-                                      Icons.arrow_forward_ios,
-                                      size: 16,
-                                      color: Colors.grey[400],
-                                    ),
-                                    onTap: () {
-                                      // Navigate to class details or take attendance
-                                      // You can use classId here for navigation
-                                    },
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
+                    if (mySchedule.isEmpty)
+                      Container()
+                    else
+                      Column(
+                        children: [
+                          for (Map<String, dynamic> schedule in mySchedule)
+                            Container()
+                        ],
+                      )
                   ],
                 ),
               ),
