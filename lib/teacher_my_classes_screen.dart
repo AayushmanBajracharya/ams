@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:intl/intl.dart'; // For date formatting
 
 class TeacherMyClass extends StatefulWidget {
   const TeacherMyClass({super.key});
@@ -260,6 +261,29 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
                 ),
               ),
 
+              // "Publish Notice" Button
+              TextButton(
+                onPressed: () {
+                  _showPublishNoticeDialog(classId);
+                },
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.green[800],
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(
+                  'Publish Notice',
+                  style: GoogleFonts.golosText(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+
               Align(
                 alignment: Alignment.centerRight,
                 child: InkWell(
@@ -410,6 +434,67 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showPublishNoticeDialog(String classId) {
+    String noticeMessage = '';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Publish Notice'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  onChanged: (value) => noticeMessage = value,
+                  decoration: const InputDecoration(
+                    labelText: 'Notice Message',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (noticeMessage.isNotEmpty) {
+                  // Updated to match your Firebase structure
+                  await _firestore.collection('notice').add({
+                    'class_id': classId,
+                    'date': DateTime.now(),
+                    'message': noticeMessage,
+                    'publishedBy': _auth.currentUser?.uid,
+                  });
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Notice published successfully!'),
+                    ),
+                  );
+                  Navigator.pop(context);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a notice message'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Publish'),
+            ),
+          ],
         );
       },
     );

@@ -34,39 +34,87 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
         ),
         centerTitle: true,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('schedules')
+      body: FutureBuilder<QuerySnapshot>(
+        future: _firestore
+            .collection('classes')
             .where('teacherId', isEqualTo: _auth.currentUser?.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            .get(),
+        builder: (context, classSnapshot) {
+          if (classSnapshot.hasError) {
+            return Center(child: Text('Error: ${classSnapshot.error}'));
           }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (classSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          if (!classSnapshot.hasData || classSnapshot.data!.docs.isEmpty) {
             return _buildNoScheduleWidget();
           }
 
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ListView.builder(
-              itemCount: snapshot.data!.docs.length,
-              itemBuilder: (context, index) {
-                final scheduleData =
-                    snapshot.data!.docs[index].data() as Map<String, dynamic>;
+          // Extract class IDs from the classes collection
+          List<String> classIds =
+              classSnapshot.data!.docs.map((doc) => doc.id).toList();
 
-                return _buildScheduleCard(
-                  scheduleData['subject'] ?? 'No Subject',
-                  scheduleData['day'] ?? 'No Day',
-                  scheduleData['time'] ?? 'No Time',
-                );
-              },
-            ),
+          return StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('schedule')
+                .where('class_id',
+                    whereIn: classIds) // Use classIds to filter schedules
+                .snapshots(),
+            builder: (context, scheduleSnapshot) {
+              if (scheduleSnapshot.hasError) {
+                return Center(child: Text('Error: ${scheduleSnapshot.error}'));
+              }
+
+              if (scheduleSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (!scheduleSnapshot.hasData ||
+                  scheduleSnapshot.data!.docs.isEmpty) {
+                return _buildNoScheduleWidget();
+              }
+
+              return Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ListView.builder(
+                  itemCount: scheduleSnapshot.data!.docs.length,
+                  itemBuilder: (context, index) {
+                    final scheduleData = scheduleSnapshot.data!.docs[index]
+                        .data() as Map<String, dynamic>;
+
+                    // Extract classId from the schedule document
+                    String classId = scheduleData['class_id'] ?? 'Unknown ID';
+                    String day = scheduleData['day_of_week'] ?? 'No Day';
+                    String time =
+                        "${scheduleData['start_time']} - ${scheduleData['end_time']}";
+
+                    // Fetch the class name using the classId
+                    return FutureBuilder<DocumentSnapshot>(
+                      future:
+                          _firestore.collection('classes').doc(classId).get(),
+                      builder: (context, classSnapshot) {
+                        if (classSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        if (classSnapshot.hasError || !classSnapshot.hasData) {
+                          return _buildScheduleCard(
+                              'Error Loading Class', day, time);
+                        }
+
+                        String subject =
+                            classSnapshot.data?['subject'] ?? 'Unknown Class';
+                        return _buildScheduleCard(subject, day, time);
+                      },
+                    );
+                  },
+                ),
+              );
+            },
           );
         },
       ),

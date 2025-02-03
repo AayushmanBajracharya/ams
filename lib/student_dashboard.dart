@@ -1,5 +1,4 @@
 import 'dart:developer';
-
 import 'package:ams/main.dart';
 import 'package:ams/qr_scanner.dart';
 import 'package:ams/services/schedule.dart';
@@ -9,7 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_screen.dart';
 import 'student_my_class_screen.dart';
-import 'student_active_class.dart';
+import 'records_screen.dart';
 import 'messages.dart';
 
 class StudentDashboard extends StatefulWidget {
@@ -23,11 +22,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
   String _username = '';
   String _email = '';
   List<String> _enrolledClasses = [];
+  List<Map<String, dynamic>> _schedule = [];
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadSchedule();
   }
 
   Future<void> _loadUserData() async {
@@ -40,17 +41,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
             await firestore.collection('users').doc(user.uid).get();
 
         if (userData.exists) {
-          // Debugging: Print the entire document data
           debugPrint("User data retrieved: ${userData.data()}");
           _enrolledClasses = await getEnrolledClasses();
           setState(() {
             _username = userData.get('username') ?? 'Student';
             _email = userData.get('email') ?? user.email;
-            // _enrolledClasses = List<Map<String, dynamic>>.from(
-            //     userData.get('enrolledClasses') ?? []);
           });
 
-          debugPrint("Username set to: $_username"); // Debugging
+          debugPrint("Username set to: $_username");
         } else {
           debugPrint("User document not found in Firestore.");
         }
@@ -62,17 +60,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
     }
   }
 
-  Future<void> _handleLogout() async {
+  Future<void> _loadSchedule() async {
     try {
-      await auth.signOut();
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/login');
-      }
+      QuerySnapshot scheduleSnapshot =
+          await firestore.collection('schedules').get();
+      List<Map<String, dynamic>> schedules = scheduleSnapshot.docs
+          .map((doc) => doc.data() as Map<String, dynamic>)
+          .toList();
+
+      setState(() {
+        _schedule = schedules.where((schedule) {
+          return _enrolledClasses.contains(schedule['classId']);
+        }).toList();
+      });
     } catch (e) {
-      debugPrint('Error signing out: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error signing out. Please try again.')),
-      );
+      debugPrint('Error loading schedule: $e');
     }
   }
 
@@ -91,15 +93,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         ),
         centerTitle: true,
-        iconTheme: IconThemeData(color: Colors.blue[800]),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              // Add notification handling
-            },
-          ),
-        ],
       ),
       drawer: Drawer(
         child: Column(
@@ -133,58 +126,50 @@ class _StudentDashboardState extends State<StudentDashboard> {
               leading: const Icon(Icons.class_),
               title: const Text('My Classes'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        const StudentMyClassesScreen(), // Navigate to the student's classes screen
+                    builder: (context) => const StudentMyClassesScreen(),
                   ),
                 );
               },
             ),
             ListTile(
               leading: const Icon(Icons.class_),
-              title: const Text('Active CLasses'),
+              title: const Text('Records'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        ActiveClassScreen(), // Correct instantiation
+                    builder: (context) => const RecordsScreen(),
                   ),
                 );
               },
             ),
-            // In the Drawer section of StudentDashboard, replace the existing Messages ListTile with:
             ListTile(
               leading: const Icon(Icons.message),
               title: const Text('Messages'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        MessageScreen(), // Navigate to MessageScreen
+                    builder: (context) => MessageScreen(),
                   ),
                 );
               },
             ),
-
-// Close the drawer
-
             ListTile(
               leading: const Icon(Icons.person_2),
               title: const Text('Profile'),
               onTap: () {
-                Navigator.pop(context); // Close the drawer
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        ProfilePage(), // Correct instantiation
+                    builder: (context) => ProfilePage(),
                   ),
                 );
               },
@@ -217,13 +202,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   return const CircularProgressIndicator();
                 }
 
-                // int activeEnrolledClasses = activeClasses.where((classDoc) {
-                //   Map<String, dynamic> classData =
-                //       classDoc.data() as Map<String, dynamic>;
-                //   return _enrolledClasses.any((enrolledClass) =>
-                //       enrolledClass['classCode'] == classData['classCode']);
-                // }).length;
-
                 return GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -231,29 +209,60 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                   children: [
-                    _buildDashboardCard(
-                      icon: Icons.book,
-                      title: 'Enrolled Classes',
-                      value: _enrolledClasses.length.toString(),
-                      color: Colors.blue,
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const StudentMyClassesScreen(),
+                          ),
+                        );
+                      },
+                      child: _buildDashboardCard(
+                        icon: Icons.book,
+                        title: 'Enrolled Classes',
+                        value: _enrolledClasses.length.toString(),
+                        color: Colors.blue,
+                      ),
                     ),
-                    // _buildDashboardCard(
-                    //   icon: Icons.class_,
-                    //   title: 'Active Classes',
-                    //   value: activeEnrolledClasses.toString(),
-                    //   color: Colors.orange,
-                    // ),
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const RecordsScreen(),
+                          ),
+                        );
+                      },
+                      child: _buildDashboardCard(
+                        icon: Icons.class_,
+                        title: 'Records',
+                        value: '',
+                        color: Colors.orange,
+                      ),
+                    ),
                     _buildDashboardCard(
-                      icon: Icons.people,
-                      title: 'Classmates',
+                      icon: Icons.notifications_none,
+                      title: 'Notice',
                       value: '0',
                       color: Colors.green,
                     ),
-                    _buildDashboardCard(
-                      icon: Icons.message,
-                      title: 'New Messages',
-                      value: '0',
-                      color: Colors.purple,
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const MessageScreen(),
+                          ),
+                        );
+                      },
+                      child: _buildDashboardCard(
+                        icon: Icons.message,
+                        title: 'New Messages',
+                        value: '0',
+                        color: Colors.purple,
+                      ),
                     ),
                   ],
                 );
@@ -274,7 +283,18 @@ class _StudentDashboardState extends State<StudentDashboard> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('No classes scheduled for today'),
+                    _schedule.isEmpty
+                        ? const Text('No classes scheduled for today')
+                        : Column(
+                            children: _schedule.map((schedule) {
+                              return ListTile(
+                                title: Text(
+                                    schedule['className'] ?? 'No Class Name'),
+                                subtitle: Text(
+                                    '${schedule['time'] ?? 'No Time'} - ${schedule['location'] ?? 'No Location'}'),
+                              );
+                            }).toList(),
+                          ),
                   ],
                 ),
               ),

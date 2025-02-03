@@ -1,4 +1,5 @@
 import 'package:ams/dummy/schedule.dart';
+import 'package:ams/teacher_notice.dart';
 import 'package:ams/teacher_schedule_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -64,7 +65,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
           await _firestore.collection('classes').doc(classId).get();
       if (classDoc.exists) {
         Map<String, dynamic> data = classDoc.data() as Map<String, dynamic>;
-        return data['className'] ?? 'Unknown Class';
+        return data['subject'] ?? 'subject';
       }
       return 'Unknown Class';
     } catch (e) {
@@ -172,15 +173,6 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
           ),
         ),
         centerTitle: true,
-        iconTheme: IconThemeData(color: Colors.blue[800]),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              // Add notification handling
-            },
-          ),
-        ],
       ),
       drawer: Drawer(
         child: Column(
@@ -243,6 +235,19 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => MessageScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications),
+              title: const Text('Notice'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TeacherNotice(),
                   ),
                 );
               },
@@ -330,11 +335,22 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                             color: Colors.blue,
                           ),
                         ),
-                        _buildDashboardCard(
-                          icon: Icons.people,
-                          title: 'Total Students',
-                          value: '0',
-                          color: Colors.green,
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const TeacherNotice(), // Navigate to the new screen
+                              ),
+                            );
+                          },
+                          child: _buildDashboardCard(
+                            icon: Icons.notifications,
+                            title: 'Notice',
+                            value: '',
+                            color: Colors.green,
+                          ),
                         ),
                         _buildDashboardCard(
                           icon: Icons.assignment,
@@ -342,11 +358,22 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                           value: '0',
                           color: Colors.orange,
                         ),
-                        _buildDashboardCard(
-                          icon: Icons.message,
-                          title: 'New Messages',
-                          value: '0',
-                          color: Colors.purple,
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const MessageScreen(), // Navigate to the new screen
+                              ),
+                            );
+                          },
+                          child: _buildDashboardCard(
+                            icon: Icons.message,
+                            title: 'New Messages',
+                            value: '0',
+                            color: Colors.purple,
+                          ),
                         ),
                       ],
                     );
@@ -392,13 +419,37 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                     ),
                     const SizedBox(height: 16),
                     if (mySchedule.isEmpty)
-                      Container()
+                      Center(
+                        child: Text(
+                          'No scheduled classes.',
+                          style: GoogleFonts.golosText(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      )
                     else
                       Column(
-                        children: [
-                          for (Map<String, dynamic> schedule in mySchedule)
-                            Container()
-                        ],
+                        children: mySchedule.map((schedule) {
+                          return Card(
+                            elevation: 2,
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            child: ListTile(
+                              leading: Icon(Icons.calendar_today,
+                                  color: Colors.blue),
+                              title: Text(
+                                "${schedule['subject']}", // Class name
+                                style: GoogleFonts.golosText(
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                "${schedule['day_of_week']} | ${_formatTimeString(schedule['start_time'])} - ${_formatTimeString(schedule['end_time'])}",
+                                style: GoogleFonts.golosText(
+                                    color: Colors.grey[600]),
+                              ),
+                            ),
+                          );
+                        }).toList(),
                       )
                   ],
                 ),
