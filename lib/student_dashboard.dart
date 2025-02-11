@@ -8,7 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_screen.dart';
 import 'student_my_class_screen.dart';
-import 'records_screen.dart';
+import 'records.dart';
 import 'messages.dart';
 import 'package:ams/student_notice.dart';
 
@@ -144,7 +144,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const RecordsScreen(),
+                    builder: (context) => StudentRecord(),
                   ),
                 );
               },
@@ -260,7 +260,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const RecordsScreen(),
+                            builder: (context) => const StudentRecord(),
                           ),
                         );
                       },
