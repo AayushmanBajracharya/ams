@@ -382,6 +382,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
               },
             ),
             const SizedBox(height: 24),
+            // Replace the existing schedule section in TeacherDashBoard with this code
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -418,39 +419,134 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    if (mySchedule.isEmpty)
-                      Center(
-                        child: Text(
-                          'No scheduled classes.',
-                          style: GoogleFonts.golosText(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      )
-                    else
-                      Column(
-                        children: mySchedule.map((schedule) {
-                          return Card(
-                            elevation: 2,
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            child: ListTile(
-                              leading: Icon(Icons.calendar_today,
-                                  color: Colors.blue),
-                              title: Text(
-                                "${schedule['subject']}", // Class name
-                                style: GoogleFonts.golosText(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Text(
-                                "${schedule['day_of_week']} | ${_formatTimeString(schedule['start_time'])} - ${_formatTimeString(schedule['end_time'])}",
-                                style: GoogleFonts.golosText(
-                                    color: Colors.grey[600]),
+                    FutureBuilder<QuerySnapshot>(
+                      future: _firestore
+                          .collection('classes')
+                          .where('teacherId', isEqualTo: _auth.currentUser?.uid)
+                          .get(),
+                      builder: (context, classSnapshot) {
+                        if (classSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        if (!classSnapshot.hasData ||
+                            classSnapshot.data!.docs.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'No scheduled classes.',
+                              style: GoogleFonts.golosText(
+                                fontSize: 16,
+                                color: Colors.grey[600],
                               ),
                             ),
                           );
-                        }).toList(),
-                      )
+                        }
+
+                        List<String> classIds = classSnapshot.data!.docs
+                            .map((doc) => doc.id)
+                            .toList();
+
+                        return StreamBuilder<QuerySnapshot>(
+                          stream: _firestore
+                              .collection('schedule')
+                              .where('class_id', whereIn: classIds)
+                              .limit(3) // Show only 3 upcoming classes
+                              .snapshots(),
+                          builder: (context, scheduleSnapshot) {
+                            if (scheduleSnapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                  child: CircularProgressIndicator());
+                            }
+
+                            if (!scheduleSnapshot.hasData ||
+                                scheduleSnapshot.data!.docs.isEmpty) {
+                              return Center(
+                                child: Text(
+                                  'No scheduled classes.',
+                                  style: GoogleFonts.golosText(
+                                    fontSize: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: scheduleSnapshot.data!.docs.length,
+                              itemBuilder: (context, index) {
+                                final scheduleData =
+                                    scheduleSnapshot.data!.docs[index].data()
+                                        as Map<String, dynamic>;
+                                String classId =
+                                    scheduleData['class_id'] ?? 'Unknown ID';
+                                String day =
+                                    scheduleData['day_of_week'] ?? 'No Day';
+                                String startTime =
+                                    scheduleData['start_time'] ?? '';
+                                String endTime = scheduleData['end_time'] ?? '';
+
+                                return FutureBuilder<DocumentSnapshot>(
+                                  future: _firestore
+                                      .collection('classes')
+                                      .doc(classId)
+                                      .get(),
+                                  builder: (context, classDoc) {
+                                    if (!classDoc.hasData) {
+                                      return const SizedBox.shrink();
+                                    }
+
+                                    String subject =
+                                        classDoc.data?['subject'] ??
+                                            'Unknown Class';
+
+                                    return Card(
+                                      elevation: 2,
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 8),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: ListTile(
+                                        leading: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Icon(
+                                            Icons.calendar_today,
+                                            color: Colors.blue[800],
+                                          ),
+                                        ),
+                                        title: Text(
+                                          subject,
+                                          style: GoogleFonts.golosText(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue[800],
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          '$day | ${_formatTimeString(startTime)} - ${_formatTimeString(endTime)}',
+                                          style: GoogleFonts.golosText(
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
