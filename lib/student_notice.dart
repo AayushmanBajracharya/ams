@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; // For date formatting
+import 'package:intl/intl.dart';
 
 class StudentNoticesScreen extends StatefulWidget {
   const StudentNoticesScreen({super.key});
@@ -15,23 +15,125 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Format date for display
+  // Cache for teacher and class data
+  final Map<String, String> _teacherCache = {};
+  final Map<String, String> _classCache = {};
+
+  Stream<List<DocumentSnapshot>> _getNoticesStream() async* {
+    try {
+      debugPrint('Fetching enrolled classes...');
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        debugPrint('No user logged in');
+        yield [];
+        return;
+      }
+
+      // 🔹 Get enrolled classes
+      final classesQuery = await _firestore
+          .collection('classes')
+          .where('students', arrayContains: currentUser.uid)
+          .get();
+
+      if (classesQuery.docs.isEmpty) {
+        debugPrint('No enrolled classes found');
+        yield [];
+        return;
+      }
+
+      final classIds = classesQuery.docs.map((doc) => doc.id).toList();
+
+      // 🔹 Firestore 'whereIn' limitation (max 10 values)
+      final limitedClassIds = classIds.take(10).toList();
+
+      debugPrint('Fetching notices for class IDs: $limitedClassIds');
+
+      // 🔹 Fetch notices from Firestore (check collection name)
+      var noticesQuery = _firestore
+          .collection(
+              'notices') // Ensure this matches your Firestore collection name
+          .where('class_id', whereIn: limitedClassIds);
+
+      // 🔹 Ensure date field exists before ordering
+      var noticesSnapshot = await noticesQuery.limit(1).get();
+      if (noticesSnapshot.docs.isNotEmpty &&
+          noticesSnapshot.docs.first.data().containsKey('date')) {
+        noticesQuery = noticesQuery.orderBy('date', descending: true);
+      }
+
+      // 🔹 Return notice stream
+      yield* noticesQuery.limit(50).snapshots().map((snapshot) {
+        debugPrint('Received ${snapshot.docs.length} notices');
+        return snapshot.docs;
+      });
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching notices: $e');
+      debugPrint('Stack trace: $stackTrace');
+      yield [];
+    }
+  }
+
   String _formatDate(dynamic date) {
     if (date == null) return 'Date not available';
 
     try {
+      DateTime dateTime;
       if (date is Timestamp) {
-        DateTime dateTime = date.toDate();
-        return DateFormat('MMMM d, y')
-            .format(dateTime); // Format: January 1, 2024
+        dateTime = date.toDate();
       } else if (date is String) {
-        DateTime dateTime = DateTime.parse(date);
-        return DateFormat('MMMM d, y').format(dateTime);
+        dateTime = DateTime.parse(date);
+      } else {
+        return 'Invalid date format';
+      }
+
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays == 0) {
+        return 'Today ${DateFormat('h:mm a').format(dateTime)}';
+      } else if (difference.inDays == 1) {
+        return 'Yesterday ${DateFormat('h:mm a').format(dateTime)}';
+      } else if (difference.inDays < 7) {
+        return DateFormat('EEEE h:mm a').format(dateTime);
+      } else {
+        return DateFormat('MMMM d, y h:mm a').format(dateTime);
       }
     } catch (e) {
-      print('Error formatting date: $e');
+      debugPrint('Error formatting date: $e');
+      return 'Date error';
     }
-    return 'Invalid date format';
+  }
+
+  Future<String> _getTeacherName(String teacherId) async {
+    if (_teacherCache.containsKey(teacherId)) {
+      return _teacherCache[teacherId]!;
+    }
+
+    try {
+      final doc = await _firestore.collection('users').doc(teacherId).get();
+      final name = doc.data()?['username'] ?? 'Unknown Teacher';
+      _teacherCache[teacherId] = name;
+      return name;
+    } catch (e) {
+      debugPrint('Error fetching teacher: $e');
+      return 'Unknown Teacher';
+    }
+  }
+
+  Future<String> _getSubject(String classId) async {
+    if (_classCache.containsKey(classId)) {
+      return _classCache[classId]!;
+    }
+
+    try {
+      final doc = await _firestore.collection('classes').doc(classId).get();
+      final subject = doc.data()?['subject'] ?? 'Unknown Subject';
+      _classCache[classId] = subject;
+      return subject;
+    } catch (e) {
+      debugPrint('Error fetching class: $e');
+      return 'Unknown Subject';
+    }
   }
 
   @override
@@ -49,114 +151,122 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
         backgroundColor: Colors.blueAccent,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              setState(() {
+                _teacherCache.clear();
+                _classCache.clear();
+              });
+            },
+          ),
+        ],
       ),
-      body: FutureBuilder<QuerySnapshot>(
-        future: _firestore
-            .collection('classes')
-            .where('students', arrayContains: _auth.currentUser?.uid)
-            .get(),
-        builder: (context, classSnapshot) {
-          if (classSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(
-                color: Colors.blueAccent,
+      body: StreamBuilder<List<DocumentSnapshot>>(
+        stream: _getNoticesStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            debugPrint('StreamBuilder error: ${snapshot.error}');
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Error loading notices',
+                      style: GoogleFonts.golosText(
+                        fontSize: 18,
+                        color: Colors.red,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Please check your connection and try again',
+                      style: GoogleFonts.golosText(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => setState(() {}),
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
               ),
             );
           }
 
-          if (!classSnapshot.hasData || classSnapshot.data!.docs.isEmpty) {
+          final notices = snapshot.data ?? [];
+
+          if (notices.isEmpty) {
             return _buildNoNoticesWidget();
           }
 
-          List<String> classIds =
-              classSnapshot.data!.docs.map((doc) => doc.id).toList();
-
-          if (classIds.length > 10) {
-            return _buildErrorWidget();
-          }
-
-          return StreamBuilder<QuerySnapshot>(
-            stream: _firestore
-                .collection('notice')
-                .where('class_id', whereIn: classIds)
-                .orderBy('date',
-                    descending: true) // Order by date (newest first)
-                .snapshots(),
-            builder: (context, noticeSnapshot) {
-              if (noticeSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.blueAccent,
-                  ),
-                );
-              }
-
-              if (!noticeSnapshot.hasData ||
-                  noticeSnapshot.data!.docs.isEmpty) {
-                return _buildNoNoticesWidget();
-              }
-
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: noticeSnapshot.data!.docs.length,
-                itemBuilder: (context, index) {
-                  final noticeData = noticeSnapshot.data!.docs[index].data()
-                      as Map<String, dynamic>;
-                  String teacherId = noticeData['publishedBy'];
-                  String classId = noticeData['class_id'];
-
-                  return FutureBuilder<DocumentSnapshot>(
-                    future: _firestore.collection('users').doc(teacherId).get(),
-                    builder: (context, teacherSnapshot) {
-                      String teacherName = 'Unknown Teacher';
-                      if (teacherSnapshot.hasData &&
-                          teacherSnapshot.data!.exists) {
-                        teacherName = teacherSnapshot.data!.get('username') ??
-                            'Unknown Teacher';
-                      }
-
-                      return FutureBuilder<DocumentSnapshot>(
-                        future:
-                            _firestore.collection('classes').doc(classId).get(),
-                        builder: (context, classSnapshot) {
-                          String subject = 'Unknown Subject';
-                          if (classSnapshot.hasData &&
-                              classSnapshot.data!.exists) {
-                            subject = classSnapshot.data!.get('subject') ??
-                                'Unknown Subject';
-                          }
-
-                          return _buildNoticeCard(
-                            title: subject,
-                            description:
-                                noticeData['message'] ?? 'No Description',
-                            date: _formatDate(noticeData['date']),
-                            teacherName: teacherName,
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-              );
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() {
+                _teacherCache.clear();
+                _classCache.clear();
+              });
             },
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: notices.length,
+              itemBuilder: (context, index) {
+                final noticeData =
+                    notices[index].data() as Map<String, dynamic>;
+
+                return FutureBuilder<Map<String, String>>(
+                  future: Future.wait([
+                    _getTeacherName(noticeData['publishedBy']),
+                    _getSubject(noticeData['class_id']),
+                  ]).then((values) => {
+                        'teacherName': values[0],
+                        'subject': values[1],
+                      }),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      );
+                    }
+
+                    return _buildNoticeCard(
+                      title: snapshot.data!['subject']!,
+                      description: noticeData['message'] ?? 'No Description',
+                      date: _formatDate(noticeData['date']),
+                      teacherName: snapshot.data!['teacherName']!,
+                    );
+                  },
+                );
+              },
+            ),
           );
         },
       ),
     );
   }
 
-  // Widget to display when no notices are found
   Widget _buildNoNoticesWidget() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.notifications_off,
-            size: 64,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.notifications_off, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             'No notices found',
@@ -165,28 +275,15 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
               color: Colors.grey[600],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  // Widget to display when there are too many classes
-  Widget _buildErrorWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error,
-            size: 64,
-            color: Colors.red,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Too many classes!',
-            style: GoogleFonts.golosText(
-              fontSize: 18,
-              color: Colors.redAccent,
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => setState(() {}),
+            child: Text(
+              'Refresh',
+              style: GoogleFonts.golosText(
+                fontSize: 16,
+                color: Colors.blueAccent,
+              ),
             ),
           ),
         ],
@@ -194,7 +291,6 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
     );
   }
 
-  // Widget to build a notice card
   Widget _buildNoticeCard({
     required String title,
     required String description,
@@ -203,68 +299,122 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
   }) {
     return Card(
       elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.golosText(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.blueAccent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            builder: (context) => DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              maxChildSize: 0.9,
+              minChildSize: 0.4,
+              expand: false,
+              builder: (context, scrollController) => SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.golosText(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      description,
+                      style: GoogleFonts.golosText(
+                        fontSize: 18,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Published by: $teacherName',
+                      style: GoogleFonts.golosText(
+                        fontSize: 16,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      date,
+                      style: GoogleFonts.golosText(
+                        fontSize: 16,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              description,
-              style: GoogleFonts.golosText(
-                fontSize: 16,
-                color: Colors.grey[700],
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.golosText(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blueAccent,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.person,
-                  size: 16,
-                  color: Colors.grey[600],
+              const SizedBox(height: 8),
+              Text(
+                description,
+                style: GoogleFonts.golosText(
+                  fontSize: 16,
+                  color: Colors.grey[700],
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  'Published by: $teacherName',
-                  style: GoogleFonts.golosText(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.person, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      teacherName,
+                      style: GoogleFonts.golosText(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 16,
-                  color: Colors.grey[600],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  date,
-                  style: GoogleFonts.golosText(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    date,
+                    style: GoogleFonts.golosText(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

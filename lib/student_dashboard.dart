@@ -2,13 +2,14 @@ import 'dart:developer';
 import 'package:ams/main.dart';
 import 'package:ams/qr_scanner.dart';
 import 'package:ams/services/schedule.dart';
+import 'package:ams/student_schedule_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_screen.dart';
 import 'student_my_class_screen.dart';
-import 'records.dart';
+import 'record_screen.dart';
 import 'messages.dart';
 import 'package:ams/student_notice.dart';
 
@@ -144,7 +145,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => StudentRecord(),
+                    builder: (context) => RecordsScreen(),
                   ),
                 );
               },
@@ -158,6 +159,19 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => MessageScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications),
+              title: const Text('Schedule'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => StudentScheduleScreen(),
                   ),
                 );
               },
@@ -260,7 +274,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const StudentRecord(),
+                            builder: (context) => const RecordsScreen(),
                           ),
                         );
                       },
