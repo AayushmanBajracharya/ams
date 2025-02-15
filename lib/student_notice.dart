@@ -43,29 +43,42 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
 
       final classIds = classesQuery.docs.map((doc) => doc.id).toList();
 
-      // 🔹 Firestore 'whereIn' limitation (max 10 values)
-      final limitedClassIds = classIds.take(10).toList();
+      debugPrint('Fetching notices for class IDs: $classIds');
 
-      debugPrint('Fetching notices for class IDs: $limitedClassIds');
-
-      // 🔹 Fetch notices from Firestore (check collection name)
-      var noticesQuery = _firestore
-          .collection(
-              'notices') // Ensure this matches your Firestore collection name
-          .where('class_id', whereIn: limitedClassIds);
-
-      // 🔹 Ensure date field exists before ordering
-      var noticesSnapshot = await noticesQuery.limit(1).get();
-      if (noticesSnapshot.docs.isNotEmpty &&
-          noticesSnapshot.docs.first.data().containsKey('date')) {
-        noticesQuery = noticesQuery.orderBy('date', descending: true);
+      // 🔹 Split class IDs into chunks of 10 (Firestore's whereIn limit)
+      final chunkSize = 10;
+      final chunks = [];
+      for (var i = 0; i < classIds.length; i += chunkSize) {
+        chunks.add(classIds.sublist(i,
+            i + chunkSize > classIds.length ? classIds.length : i + chunkSize));
       }
 
-      // 🔹 Return notice stream
-      yield* noticesQuery.limit(50).snapshots().map((snapshot) {
-        debugPrint('Received ${snapshot.docs.length} notices');
-        return snapshot.docs;
+      // 🔹 Fetch notices for each chunk
+      List<DocumentSnapshot> allNotices = [];
+      for (final chunk in chunks) {
+        var noticesQuery =
+            _firestore.collection('notices').where('class_id', whereIn: chunk);
+
+        // 🔹 Ensure date field exists before ordering
+        var noticesSnapshot = await noticesQuery.limit(1).get();
+        if (noticesSnapshot.docs.isNotEmpty &&
+            noticesSnapshot.docs.first.data().containsKey('date')) {
+          noticesQuery = noticesQuery.orderBy('date', descending: true);
+        }
+
+        final notices = await noticesQuery.limit(50).get();
+        allNotices.addAll(notices.docs);
+      }
+
+      // 🔹 Sort all notices by date
+      allNotices.sort((a, b) {
+        final aDate = a['date'] as Timestamp;
+        final bDate = b['date'] as Timestamp;
+        return bDate.compareTo(aDate);
       });
+
+      // 🔹 Yield the combined notices
+      yield allNotices;
     } catch (e, stackTrace) {
       debugPrint('Error fetching notices: $e');
       debugPrint('Stack trace: $stackTrace');

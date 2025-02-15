@@ -1,11 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -19,16 +15,13 @@ class _ProfilePageState extends State<ProfilePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  File? _image;
-  String? _profileImageBase64;
-  String _username = 'Loading...'; // Default value
+  String _username = 'Loading...';
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    _loadProfilePicture();
   }
 
   Future<void> _loadUserData() async {
@@ -40,23 +33,14 @@ class _ProfilePageState extends State<ProfilePage> {
             await _firestore.collection('users').doc(user.uid).get();
 
         if (userData.exists) {
-          // Fetch the 'username' field from Firestore
           final username = userData.get('username') ?? 'No Name';
-          // Check if the 'profile_image' field exists
-          final imageBase64 =
-              userData.data()?.containsKey('profile_image') == true
-                  ? userData.get('profile_image')
-                  : null;
-
           setState(() {
-            _username = username; // Update the _username variable
-            _nameController.text = username; // Set the name in the TextField
-            _profileImageBase64 = imageBase64; // Update the profile image
+            _username = username;
+            _nameController.text = username;
           });
         } else {
-          // If the document doesn't exist, create it with a default username
           await _firestore.collection('users').doc(user.uid).set({
-            'username': 'No Name', // Default username
+            'username': 'No Name',
           });
           setState(() {
             _username = 'No Name';
@@ -77,45 +61,6 @@ class _ProfilePageState extends State<ProfilePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('User not logged in!')),
       );
-    }
-  }
-
-  Future<void> _loadProfilePicture() async {
-    final prefs = await SharedPreferences.getInstance();
-    final imageBase64 = prefs.getString('profile_image_base64');
-    if (imageBase64 != null) {
-      setState(() {
-        _profileImageBase64 = imageBase64;
-      });
-    }
-  }
-
-  Future<void> _pickImage() async {
-    final pickedFile =
-        await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      final imageBytes = await File(pickedFile.path).readAsBytes();
-      final imageBase64 = base64Encode(imageBytes);
-      setState(() {
-        _image = File(pickedFile.path);
-        _profileImageBase64 = imageBase64;
-      });
-      await _saveProfilePictureBase64(imageBase64);
-    }
-  }
-
-  Future<void> _saveProfilePictureBase64(String base64) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('profile_image_base64', base64);
-
-    final user = _auth.currentUser;
-    if (user != null) {
-      await _firestore.collection('users').doc(user.uid).set(
-          {
-            'profile_image': base64,
-          },
-          SetOptions(
-              merge: true)); // Merge with existing data or create the document
     }
   }
 
@@ -154,10 +99,10 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() => _isLoading = true);
       try {
         await _firestore.collection('users').doc(user.uid).update({
-          'username': newName, // Update the 'username' field in Firestore
+          'username': newName,
         });
         setState(() {
-          _username = newName; // Update the displayed name
+          _username = newName;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Name updated successfully!')),
@@ -228,7 +173,6 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _deleteAccount() async {
     final user = _auth.currentUser;
     if (user != null) {
-      // Show a confirmation dialog
       final confirmDelete = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -237,11 +181,11 @@ class _ProfilePageState extends State<ProfilePage> {
               'Do you really want to permanently delete your account?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, false), // Cancel
+              onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(context, true), // Confirm delete
+              onPressed: () => Navigator.pop(context, true),
               child: const Text(
                 'Delete',
                 style: TextStyle(color: Colors.red),
@@ -251,20 +195,15 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       );
 
-      // If the user confirms deletion
       if (confirmDelete == true) {
         setState(() => _isLoading = true);
         try {
-          await user.delete(); // Delete the user from Firebase Auth
-          await _firestore
-              .collection('users')
-              .doc(user.uid)
-              .delete(); // Delete user data from Firestore
+          await user.delete();
+          await _firestore.collection('users').doc(user.uid).delete();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Account deleted successfully!')),
           );
-          Navigator.of(context).popUntil(
-              (route) => route.isFirst); // Navigate back to the first screen
+          Navigator.of(context).popUntil((route) => route.isFirst);
         } catch (e) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error deleting account: $e')),
@@ -316,22 +255,22 @@ class _ProfilePageState extends State<ProfilePage> {
                   Center(
                     child: Column(
                       children: [
-                        GestureDetector(
-                          onTap: _pickImage,
-                          child: CircleAvatar(
-                            radius: 50,
-                            backgroundImage: _profileImageBase64 != null
-                                ? MemoryImage(
-                                    base64Decode(_profileImageBase64!))
-                                : null,
-                            child: _profileImageBase64 == null
-                                ? const Icon(Icons.camera_alt, size: 40)
-                                : null,
+                        Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Colors.blue[100],
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.person,
+                            size: 60,
+                            color: Colors.blue[800],
                           ),
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          _username, // Display the name fetched from Firestore
+                          _username,
                           style: GoogleFonts.golosText(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

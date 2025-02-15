@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'messages.dart';
+import 'teacher_message.dart';
 import 'profile_screen.dart';
 import 'teacher_my_classes_screen.dart';
 
@@ -234,7 +234,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => MessageScreen(),
+                    builder: (context) => TeacherMessageScreen(),
                   ),
                 );
               },
@@ -364,7 +364,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                               context,
                               MaterialPageRoute(
                                 builder: (context) =>
-                                    const MessageScreen(), // Navigate to the new screen
+                                    TeacherMessageScreen(), // Navigate to the new screen
                               ),
                             );
                           },
