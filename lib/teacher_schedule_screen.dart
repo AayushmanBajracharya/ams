@@ -14,6 +14,45 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Order days of week for consistent sorting
+  final List<String> daysOrder = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday'
+  ];
+
+  Map<String, List<Map<String, dynamic>>> groupSchedulesByDay(
+      List<DocumentSnapshot> schedules) {
+    Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    // Initialize empty lists for all days
+    for (var day in daysOrder) {
+      grouped[day] = [];
+    }
+
+    // Group schedules by day
+    for (var schedule in schedules) {
+      final data = schedule.data() as Map<String, dynamic>;
+      String day = data['day_of_week'] ?? 'Unknown';
+      if (grouped.containsKey(day)) {
+        grouped[day]!.add(data);
+      }
+    }
+
+    // Sort each day's schedules by start time
+    for (var day in grouped.keys) {
+      grouped[day]!.sort((a, b) {
+        return (a['start_time'] ?? '').compareTo(b['start_time'] ?? '');
+      });
+    }
+
+    return grouped;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -52,15 +91,13 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
             return _buildNoScheduleWidget();
           }
 
-          // Extract class IDs from the classes collection
           List<String> classIds =
               classSnapshot.data!.docs.map((doc) => doc.id).toList();
 
           return StreamBuilder<QuerySnapshot>(
             stream: _firestore
                 .collection('schedule')
-                .where('class_id',
-                    whereIn: classIds) // Use classIds to filter schedules
+                .where('class_id', whereIn: classIds)
                 .snapshots(),
             builder: (context, scheduleSnapshot) {
               if (scheduleSnapshot.hasError) {
@@ -76,42 +113,61 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
                 return _buildNoScheduleWidget();
               }
 
-              return Padding(
+              final groupedSchedules =
+                  groupSchedulesByDay(scheduleSnapshot.data!.docs);
+
+              return SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
-                child: ListView.builder(
-                  itemCount: scheduleSnapshot.data!.docs.length,
-                  itemBuilder: (context, index) {
-                    final scheduleData = scheduleSnapshot.data!.docs[index]
-                        .data() as Map<String, dynamic>;
+                child: Column(
+                  children: daysOrder.map((day) {
+                    final schedules = groupedSchedules[day] ?? [];
+                    if (schedules.isEmpty) return const SizedBox.shrink();
 
-                    // Extract classId from the schedule document
-                    String classId = scheduleData['class_id'] ?? 'Unknown ID';
-                    String day = scheduleData['day_of_week'] ?? 'No Day';
-                    String time =
-                        "${scheduleData['start_time']} - ${scheduleData['end_time']}";
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[800],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            day,
+                            style: GoogleFonts.golosText(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        ...schedules.map((schedule) {
+                          final classId = schedule['class_id'] ?? 'Unknown ID';
+                          final time =
+                              "${schedule['start_time']} - ${schedule['end_time']}";
 
-                    // Fetch the class name using the classId
-                    return FutureBuilder<DocumentSnapshot>(
-                      future:
-                          _firestore.collection('classes').doc(classId).get(),
-                      builder: (context, classSnapshot) {
-                        if (classSnapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
+                          return FutureBuilder<DocumentSnapshot>(
+                            future: _firestore
+                                .collection('classes')
+                                .doc(classId)
+                                .get(),
+                            builder: (context, classSnapshot) {
+                              if (!classSnapshot.hasData) {
+                                return const SizedBox.shrink();
+                              }
 
-                        if (classSnapshot.hasError || !classSnapshot.hasData) {
-                          return _buildScheduleCard(
-                              'Error Loading Class', day, time);
-                        }
-
-                        String subject =
-                            classSnapshot.data?['subject'] ?? 'Unknown Class';
-                        return _buildScheduleCard(subject, day, time);
-                      },
+                              final subject = classSnapshot.data?['subject'] ??
+                                  'Unknown Class';
+                              return _buildScheduleCard(subject, day, time);
+                            },
+                          );
+                        }).toList(),
+                        const SizedBox(height: 16),
+                      ],
                     );
-                  },
+                  }).toList(),
                 ),
               );
             },
@@ -151,37 +207,50 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
   Widget _buildScheduleCard(String subject, String day, String time) {
     return Card(
       elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              subject,
-              style: GoogleFonts.golosText(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.class_,
                 color: Colors.blue[800],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Day: $day',
-              style: GoogleFonts.golosText(
-                fontSize: 14,
-                color: Colors.grey[600],
+                size: 24,
               ),
             ),
-            Text(
-              'Time: $time',
-              style: GoogleFonts.golosText(
-                fontSize: 14,
-                color: Colors.grey[600],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subject,
+                    style: GoogleFonts.golosText(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[800],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Time: $time',
+                    style: GoogleFonts.golosText(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
