@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:intl/intl.dart'; // For date formatting
+// For date formatting
 
 class TeacherMyClass extends StatefulWidget {
   const TeacherMyClass({super.key});
@@ -81,8 +81,8 @@ class _TeacherMyClassState extends State<TeacherMyClass> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showCreateClassDialog(),
-        child: const Icon(Icons.add),
         tooltip: 'Create New Class',
+        child: const Icon(Icons.add),
       ),
     );
   }

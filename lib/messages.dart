@@ -1,351 +1,726 @@
+import 'package:ams/request_message.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
-class NewMessageDialog extends StatefulWidget {
-  const NewMessageDialog({Key? key}) : super(key: key);
-
-  @override
-  _NewMessageDialogState createState() => _NewMessageDialogState();
-}
-
-class _NewMessageDialogState extends State<NewMessageDialog> {
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _messageController = TextEditingController();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  bool _isLoading = false;
-
-  Future<void> _sendMessage() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      QuerySnapshot userQuery = await _firestore
-          .collection('users')
-          .where('email', isEqualTo: _emailController.text.trim())
-          .get();
-
-      if (userQuery.docs.isEmpty) {
-        _showErrorSnackBar('Email not found');
-        return;
-      }
-
-      var recipientUserId = userQuery.docs.first.id;
-      var currentUserId = _auth.currentUser?.uid;
-
-      var chatQuery = await _firestore
-          .collection('chats')
-          .where('participants', arrayContains: currentUserId)
-          .where('participants', arrayContains: recipientUserId)
-          .get();
-
-      DocumentReference chatRef;
-      if (chatQuery.docs.isEmpty) {
-        chatRef = await _firestore.collection('chats').add({
-          'participants': [currentUserId, recipientUserId],
-          'lastMessage': _messageController.text.trim(),
-          'lastMessageTimestamp': FieldValue.serverTimestamp(),
-        });
-      } else {
-        chatRef = chatQuery.docs.first.reference;
-      }
-
-      await chatRef.collection('messages').add({
-        'senderId': currentUserId,
-        'recipientId': recipientUserId,
-        'message': _messageController.text.trim(),
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      await chatRef.update({
-        'lastMessage': _messageController.text.trim(),
-        'lastMessageTimestamp': FieldValue.serverTimestamp(),
-      });
-
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Message sent successfully!',
-            style: GoogleFonts.golosText(),
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      _showErrorSnackBar('Failed to send message');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: GoogleFonts.golosText(color: Colors.white),
-        ),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              spreadRadius: 2,
-              blurRadius: 10,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'New Message',
-              style: GoogleFonts.golosText(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue[800],
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _emailController,
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.email, color: Colors.blue[800]),
-                labelText: 'Recipient Email',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.blue[800]!, width: 2),
-                ),
-              ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                prefixIcon: Icon(Icons.message, color: Colors.blue[800]),
-                labelText: 'Message',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.blue[800]!, width: 2),
-                ),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(
-                    'Cancel',
-                    style: GoogleFonts.golosText(
-                      color: Colors.red,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[800],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _isLoading ? null : _sendMessage,
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                          'Send',
-                          style: GoogleFonts.golosText(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class MessageScreen extends StatefulWidget {
-  const MessageScreen({Key? key}) : super(key: key);
-
   @override
   _MessageScreenState createState() => _MessageScreenState();
 }
 
 class _MessageScreenState extends State<MessageScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return '';
-    final now = DateTime.now();
-    final messageTime = timestamp.toDate();
-    final difference = now.difference(messageTime);
-
-    if (difference.inDays > 0) {
-      return DateFormat('MMM d').format(messageTime);
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m';
-    } else {
-      return 'now';
-    }
+  Future<void> _handleRefresh() async {
+    // Wait for a short duration to show the refresh indicator
+    await Future.delayed(Duration(milliseconds: 1000));
+    setState(() {});
+    return Future.value();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Messages',
-          style: GoogleFonts.golosText(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.blue[800],
+    if (_auth.currentUser == null) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 64,
+                color: Colors.grey[400],
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Please log in to view your requests',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
           ),
         ),
-        backgroundColor: Colors.white,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
         elevation: 0,
-        centerTitle: true,
+        title: Text(
+          'Leave Requests',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: Colors.blue[800],
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _handleRefresh,
+          ),
+        ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('chats')
-            .where('participants', arrayContains: _auth.currentUser?.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.message_outlined,
-                    size: 100,
-                    color: Colors.grey[300],
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'No conversations yet',
-                    style: GoogleFonts.golosText(
-                      color: Colors.grey[600],
-                      fontSize: 18,
-                    ),
-                  ),
-                ],
+      body: Column(
+        children: [
+          Container(
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.blue[800],
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(8),
+                bottomRight: Radius.circular(8),
               ),
-            );
-          }
-
-          return ListView.separated(
-            itemCount: snapshot.data!.docs.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              var chatDoc = snapshot.data!.docs[index];
-              List<dynamic> participants = chatDoc['participants'];
-
-              String otherParticipantId =
-                  participants.firstWhere((id) => id != _auth.currentUser?.uid);
-
-              return FutureBuilder<DocumentSnapshot>(
-                future: _firestore
-                    .collection('users')
-                    .doc(otherParticipantId)
-                    .get(),
-                builder: (context, userSnapshot) {
-                  if (!userSnapshot.hasData) {
-                    return const SizedBox.shrink();
+            ),
+            child: Center(
+              child: Text(
+                'Your Leave Request History',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _handleRefresh,
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('leave_requests')
+                    .where('studentEmail', isEqualTo: _auth.currentUser?.email)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(
+                      child: CircularProgressIndicator(
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.blue[800]!),
+                      ),
+                    );
                   }
 
-                  var userData = userSnapshot.data!;
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.blue[800],
-                      child: Text(
-                        userData['username']?[0].toUpperCase() ?? 'U',
-                        style: const TextStyle(color: Colors.white),
+                  if (snapshot.hasError) {
+                    return SingleChildScrollView(
+                      physics: AlwaysScrollableScrollPhysics(),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height * 0.2),
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: Colors.red[400],
+                            ),
+                            SizedBox(height: 16),
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text(
+                                'Error loading requests. Please check your internet connection and try again.',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.red[600],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            SizedBox(height: 20),
+                            ElevatedButton(
+                              onPressed: _handleRefresh,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue[800],
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 12),
+                              ),
+                              child: Text(
+                                'Retry',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    title: Text(
-                      userData['username'] ?? 'Unknown User',
-                      style: GoogleFonts.golosText(
-                        fontWeight: FontWeight.bold,
+                    );
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return SingleChildScrollView(
+                      physics: AlwaysScrollableScrollPhysics(),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height * 0.2),
+                            Icon(
+                              Icons.inbox_rounded,
+                              size: 70,
+                              color: Colors.grey[400],
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'No leave requests yet',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    subtitle: Text(
-                      chatDoc['lastMessage'] ?? 'No messages',
-                      style: GoogleFonts.golosText(
-                        color: Colors.grey[600],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: Text(
-                      _formatTimestamp(chatDoc['lastMessageTimestamp']),
-                      style: GoogleFonts.golosText(
-                        color: Colors.grey[500],
-                        fontSize: 12,
-                      ),
-                    ),
-                    onTap: () {
-                      // TODO: Navigate to individual chat screen
+                    );
+                  }
+
+                  var requests = snapshot.data!.docs;
+                  return ListView.builder(
+                    physics: AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.all(16),
+                    itemCount: requests.length,
+                    itemBuilder: (context, index) {
+                      var request =
+                          requests[index].data() as Map<String, dynamic>;
+
+                      DateTime timestamp = DateTime.now();
+                      try {
+                        if (request['timestamp'] != null) {
+                          timestamp =
+                              (request['timestamp'] as Timestamp).toDate();
+                        }
+                      } catch (e) {
+                        print('Error parsing timestamp: $e');
+                      }
+
+                      var status = request['status']?.toString() ?? 'pending';
+                      var teacherEmail = request['teacherEmail']?.toString() ??
+                          'No teacher email';
+                      var message =
+                          request['message']?.toString() ?? 'No message';
+                      var numberOfDays =
+                          request['numberOfDays']?.toString() ?? '0';
+
+                      return Card(
+                        elevation: 2,
+                        margin: EdgeInsets.only(bottom: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: InkWell(
+                          onTap: () => _showRequestDetails(
+                              context, request, requests[index].id),
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'To: $teacherEmail',
+                                        style: GoogleFonts.poppins(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    _buildStatusChip(status),
+                                  ],
+                                ),
+                                SizedBox(height: 12),
+                                Text(
+                                  message,
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                SizedBox(height: 12),
+                                Divider(),
+                                SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.calendar_today,
+                                          size: 16,
+                                          color: Colors.blue[800],
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          DateFormat('MMM dd')
+                                              .format(timestamp),
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.grey[700],
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Text(
+                                      '$numberOfDays days',
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.grey[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
                     },
                   );
                 },
-              );
-            },
-          );
-        },
+              ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => const NewMessageDialog(),
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => LeaveRequestPage()),
           );
         },
         backgroundColor: Colors.blue[800],
-        child: const Icon(Icons.message, color: Colors.white),
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String status) {
+    Color chipColor;
+    Color textColor;
+    IconData statusIcon;
+
+    switch (status.toLowerCase()) {
+      case 'approved':
+        chipColor = Colors.green[100]!;
+        textColor = Colors.green[800]!;
+        statusIcon = Icons.check_circle;
+        break;
+      case 'rejected':
+        chipColor = Colors.red[100]!;
+        textColor = Colors.red[800]!;
+        statusIcon = Icons.cancel;
+        break;
+      default:
+        chipColor = Colors.orange[100]!;
+        textColor = Colors.orange[800]!;
+        statusIcon = Icons.access_time;
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: chipColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            statusIcon,
+            size: 16,
+            color: textColor,
+          ),
+          SizedBox(width: 4),
+          Text(
+            status[0].toUpperCase() + status.substring(1).toLowerCase(),
+            style: GoogleFonts.poppins(
+              color: textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRequestDetails(
+      BuildContext context, Map<String, dynamic> request, String requestId) {
+    DateTime startDate = DateTime.now();
+    DateTime endDate = DateTime.now();
+    try {
+      if (request['startDate'] != null) {
+        startDate = (request['startDate'] as Timestamp).toDate();
+      }
+      if (request['endDate'] != null) {
+        endDate = (request['endDate'] as Timestamp).toDate();
+      }
+    } catch (e) {
+      print('Error parsing dates: $e');
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Leave Request Details',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 20),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _detailRow(
+                            'Teacher',
+                            request['teacherEmail']?.toString() ??
+                                'Not specified'),
+                        _detailRow('Faculty',
+                            request['faculty']?.toString() ?? 'Not specified'),
+                        _detailRow('Reason',
+                            request['reason']?.toString() ?? 'Not specified'),
+                        _detailRow(
+                          'Duration',
+                          '${DateFormat('MMM dd, yyyy').format(startDate)} - ${DateFormat('MMM dd, yyyy').format(endDate)}',
+                        ),
+                        _detailRow('Days',
+                            '${request['numberOfDays']?.toString() ?? '0'} days'),
+                        _detailRow(
+                            'Status',
+                            (request['status']?.toString() ?? 'pending')
+                                .toUpperCase()),
+                        SizedBox(height: 20),
+                        Text(
+                          'Conversation:',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        StreamBuilder<QuerySnapshot>(
+                          stream: _firestore
+                              .collection('leave_requests')
+                              .doc(requestId)
+                              .collection('messages')
+                              .orderBy('timestamp')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+
+                            if (!snapshot.hasData ||
+                                snapshot.data!.docs.isEmpty) {
+                              // Show initial message if no conversation exists
+                              return _buildMessageBubble(
+                                message: request['message']?.toString() ??
+                                    'No message provided',
+                                isFromCurrentUser: true,
+                                timestamp: request['timestamp'] != null
+                                    ? (request['timestamp'] as Timestamp)
+                                        .toDate()
+                                    : DateTime.now(),
+                              );
+                            }
+
+                            // Show all messages in the conversation
+                            List<Widget> messageWidgets = [];
+
+                            // Add initial message first
+                            messageWidgets.add(
+                              _buildMessageBubble(
+                                message: request['message']?.toString() ??
+                                    'No message provided',
+                                isFromCurrentUser: true,
+                                timestamp: request['timestamp'] != null
+                                    ? (request['timestamp'] as Timestamp)
+                                        .toDate()
+                                    : DateTime.now(),
+                              ),
+                            );
+
+                            // Add all subsequent messages
+                            for (var doc in snapshot.data!.docs) {
+                              var messageData =
+                                  doc.data() as Map<String, dynamic>;
+                              String sender =
+                                  messageData['sender']?.toString() ?? '';
+                              bool isFromCurrentUser =
+                                  sender == _auth.currentUser?.email;
+
+                              messageWidgets.add(
+                                _buildMessageBubble(
+                                  message:
+                                      messageData['text']?.toString() ?? '',
+                                  isFromCurrentUser: isFromCurrentUser,
+                                  timestamp: messageData['timestamp'] != null
+                                      ? (messageData['timestamp'] as Timestamp)
+                                          .toDate()
+                                      : DateTime.now(),
+                                ),
+                              );
+                            }
+
+                            return Column(
+                              children: messageWidgets,
+                            );
+                          },
+                        ),
+                        SizedBox(height: 20),
+                        if (request['status']?.toString()?.toLowerCase() !=
+                            'closed')
+                          _buildReplyWidget(requestId),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble({
+    required String message,
+    required bool isFromCurrentUser,
+    required DateTime timestamp,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment:
+            isFromCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isFromCurrentUser)
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.blue[700],
+              child: Icon(
+                Icons.person,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          if (!isFromCurrentUser) SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: isFromCurrentUser
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color:
+                        isFromCurrentUser ? Colors.blue[100] : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isFromCurrentUser
+                          ? Colors.blue[200]!
+                          : Colors.grey[300]!,
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    message,
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[800],
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  DateFormat('MMM dd, yyyy • h:mm a').format(timestamp),
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[500],
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isFromCurrentUser) SizedBox(width: 8),
+          if (isFromCurrentUser)
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.blue[700],
+              child: Icon(
+                Icons.person,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyWidget(String requestId) {
+    TextEditingController _replyController = TextEditingController();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Divider(),
+        SizedBox(height: 8),
+        Text(
+          'Reply:',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+        ),
+        SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _replyController,
+                decoration: InputDecoration(
+                  hintText: 'Type your message...',
+                  hintStyle: GoogleFonts.poppins(
+                    color: Colors.grey[400],
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                maxLines: 3,
+                minLines: 1,
+              ),
+            ),
+            SizedBox(width: 8),
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: Colors.blue[700],
+              child: IconButton(
+                icon: Icon(
+                  Icons.send,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  if (_replyController.text.trim().isNotEmpty) {
+                    _sendReply(requestId, _replyController.text.trim());
+                    _replyController.clear();
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _sendReply(String requestId, String message) async {
+    try {
+      await _firestore
+          .collection('leave_requests')
+          .doc(requestId)
+          .collection('messages')
+          .add({
+        'text': message,
+        'sender': _auth.currentUser?.email,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error sending reply: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send message. Please try again.'),
+          backgroundColor: Colors.red[700],
+        ),
+      );
+    }
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                color: Colors.grey[900],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

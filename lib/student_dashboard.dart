@@ -2,14 +2,16 @@ import 'dart:developer';
 import 'package:ams/main.dart';
 import 'package:ams/qr_scanner.dart';
 import 'package:ams/services/schedule.dart';
+import 'package:ams/student_schedule_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_screen.dart';
 import 'student_my_class_screen.dart';
-import 'records_screen.dart';
+import 'record_screen.dart';
 import 'messages.dart';
+import 'package:ams/student_notice.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -130,7 +132,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const StudentMyClassesScreen(),
+                    builder: (context) => StudentMyClassesScreen(),
                   ),
                 );
               },
@@ -143,7 +145,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const RecordsScreen(),
+                    builder: (context) => RecordsScreen(),
                   ),
                 );
               },
@@ -157,6 +159,32 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => MessageScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications),
+              title: const Text('Schedule'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => StudentScheduleScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.notifications),
+              title: const Text('Notice'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => StudentNoticesScreen(),
                   ),
                 );
               },
@@ -214,8 +242,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) =>
-                                const StudentMyClassesScreen(),
+                            builder: (context) => StudentMyClassesScreen(),
                           ),
                         );
                       },
@@ -224,6 +251,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         title: 'Enrolled Classes',
                         value: _enrolledClasses.length.toString(),
                         color: Colors.blue,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => MessageScreen(),
+                          ),
+                        );
+                      },
+                      child: _buildDashboardCard(
+                        icon: Icons.message,
+                        title: 'New Messages',
+                        value: '0',
+                        color: Colors.purple,
                       ),
                     ),
                     InkWell(
@@ -242,26 +285,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         color: Colors.orange,
                       ),
                     ),
-                    _buildDashboardCard(
-                      icon: Icons.notifications_none,
-                      title: 'Notice',
-                      value: '0',
-                      color: Colors.green,
-                    ),
                     InkWell(
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const MessageScreen(),
+                            builder: (context) => StudentNoticesScreen(),
                           ),
                         );
                       },
                       child: _buildDashboardCard(
-                        icon: Icons.message,
-                        title: 'New Messages',
-                        value: '0',
-                        color: Colors.purple,
+                        icon: Icons.notifications,
+                        title: 'Notice',
+                        value: '',
+                        color: Colors.green,
                       ),
                     ),
                   ],
