@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'teacher_message.dart';
 import 'profile_screen.dart';
 import 'teacher_my_classes_screen.dart';
+import 'teacher_attendance_req.dart';
 
 class TeacherDashBoard extends StatefulWidget {
   const TeacherDashBoard({super.key});
@@ -352,11 +353,28 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                             color: Colors.green,
                           ),
                         ),
-                        _buildDashboardCard(
-                          icon: Icons.assignment,
-                          title: 'Attendance Requests',
-                          value: '0',
-                          color: Colors.orange,
+                        InkWell(
+                          onTap: () {
+                            // Navigate to ClassAttendanceScreen
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    AttendanceclassDetailsScreen(
+                                  classId:
+                                      'your_class_id', // Replace with actual class ID
+                                  className:
+                                      'your_class_name', // Replace with actual class name
+                                ),
+                              ),
+                            );
+                          },
+                          child: _buildDashboardCard(
+                            icon: Icons.assignment,
+                            title: 'Attendance Requests',
+                            value: '0', // Replace with actual count
+                            color: Colors.orange,
+                          ),
                         ),
                         InkWell(
                           onTap: () {
