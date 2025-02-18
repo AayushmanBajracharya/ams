@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart'; // Add this import for date formatting
 
 class TeacherNotice extends StatefulWidget {
   const TeacherNotice({super.key});
@@ -76,6 +77,21 @@ class _TeacherNoticeState extends State<TeacherNotice> {
                   String teacherId = noticeData['publishedBy'];
                   String classId = noticeData['class_id'];
 
+                  // Format the date
+                  String formattedDate = 'No date';
+                  if (noticeData['date'] != null) {
+                    if (noticeData['date'] is Timestamp) {
+                      // Convert Firestore Timestamp to DateTime
+                      final DateTime dateTime =
+                          (noticeData['date'] as Timestamp).toDate();
+                      // Format the date as desired - showing only date and time
+                      formattedDate =
+                          DateFormat('MMM dd, yyyy - hh:mm a').format(dateTime);
+                    } else {
+                      formattedDate = noticeData['date'].toString();
+                    }
+                  }
+
                   return FutureBuilder<DocumentSnapshot>(
                     future: _firestore.collection('users').doc(teacherId).get(),
                     builder: (context, teacherSnapshot) {
@@ -101,7 +117,7 @@ class _TeacherNoticeState extends State<TeacherNotice> {
                             title: subject,
                             description:
                                 noticeData['message'] ?? 'No Description',
-                            date: noticeData['date'].toString(),
+                            date: formattedDate,
                             teacherName: teacherName,
                           );
                         },

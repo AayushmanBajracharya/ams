@@ -372,7 +372,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                           child: _buildDashboardCard(
                             icon: Icons.assignment,
                             title: 'Attendance Requests',
-                            value: '0', // Replace with actual count
+                            value: '', // Replace with actual count
                             color: Colors.orange,
                           ),
                         ),
@@ -389,7 +389,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                           child: _buildDashboardCard(
                             icon: Icons.message,
                             title: 'New Messages',
-                            value: '0',
+                            value: '',
                             color: Colors.purple,
                           ),
                         ),
@@ -400,7 +400,6 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
               },
             ),
             const SizedBox(height: 24),
-            // Replace the existing schedule section in TeacherDashBoard with this code
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -470,7 +469,6 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                           stream: _firestore
                               .collection('schedule')
                               .where('class_id', whereIn: classIds)
-                              .limit(3) // Show only 3 upcoming classes
                               .snapshots(),
                           builder: (context, scheduleSnapshot) {
                             if (scheduleSnapshot.connectionState ==
@@ -492,72 +490,191 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                               );
                             }
 
+                            // Group schedules by day
+                            Map<String, List<Map<String, dynamic>>>
+                                schedulesByDay = {};
+                            final weekDays = [
+                              'Monday',
+                              'Tuesday',
+                              'Wednesday',
+                              'Thursday',
+                              'Friday',
+                              'Saturday',
+                              'Sunday'
+                            ];
+
+                            // Initialize empty lists for each day
+                            for (var day in weekDays) {
+                              schedulesByDay[day] = [];
+                            }
+
+                            // Group schedule data by days
+                            for (var doc in scheduleSnapshot.data!.docs) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final day = data['day_of_week'] ?? 'Unknown';
+                              if (schedulesByDay.containsKey(day)) {
+                                schedulesByDay[day]!.add({
+                                  ...data,
+                                  'id': doc.id, // Add document ID for reference
+                                });
+                              }
+                            }
+
+                            // Sort schedules within each day by start time
+                            schedulesByDay.forEach((day, schedules) {
+                              schedules.sort((a, b) {
+                                String aTime = a['start_time'] ?? '';
+                                String bTime = b['start_time'] ?? '';
+                                return aTime.compareTo(bTime);
+                              });
+                            });
+
+                            // Display schedules by day
                             return ListView.builder(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
-                              itemCount: scheduleSnapshot.data!.docs.length,
-                              itemBuilder: (context, index) {
-                                final scheduleData =
-                                    scheduleSnapshot.data!.docs[index].data()
-                                        as Map<String, dynamic>;
-                                String classId =
-                                    scheduleData['class_id'] ?? 'Unknown ID';
-                                String day =
-                                    scheduleData['day_of_week'] ?? 'No Day';
-                                String startTime =
-                                    scheduleData['start_time'] ?? '';
-                                String endTime = scheduleData['end_time'] ?? '';
+                              itemCount: weekDays.length,
+                              itemBuilder: (context, dayIndex) {
+                                String day = weekDays[dayIndex];
+                                List<Map<String, dynamic>> daySchedules =
+                                    schedulesByDay[day] ?? [];
 
-                                return FutureBuilder<DocumentSnapshot>(
-                                  future: _firestore
-                                      .collection('classes')
-                                      .doc(classId)
-                                      .get(),
-                                  builder: (context, classDoc) {
-                                    if (!classDoc.hasData) {
-                                      return const SizedBox.shrink();
-                                    }
+                                // Skip days with no schedules
+                                if (daySchedules.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
 
-                                    String subject =
-                                        classDoc.data?['subject'] ??
-                                            'Unknown Class';
-
-                                    return Card(
-                                      elevation: 2,
-                                      margin: const EdgeInsets.symmetric(
-                                          vertical: 8),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 8.0),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue[800],
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              day,
+                                              style: GoogleFonts.golosText(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Divider(
+                                              indent: 8,
+                                              color: Colors.grey[300],
+                                              thickness: 1,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      child: ListTile(
-                                        leading: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue.withOpacity(0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          child: Icon(
-                                            Icons.calendar_today,
-                                            color: Colors.blue[800],
-                                          ),
-                                        ),
-                                        title: Text(
-                                          subject,
-                                          style: GoogleFonts.golosText(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue[800],
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          '$day | ${_formatTimeString(startTime)} - ${_formatTimeString(endTime)}',
-                                          style: GoogleFonts.golosText(
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                    ),
+                                    ListView.builder(
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      itemCount: daySchedules.length,
+                                      itemBuilder: (context, scheduleIndex) {
+                                        final scheduleData =
+                                            daySchedules[scheduleIndex];
+                                        String classId =
+                                            scheduleData['class_id'] ??
+                                                'Unknown ID';
+                                        String startTime =
+                                            scheduleData['start_time'] ?? '';
+                                        String endTime =
+                                            scheduleData['end_time'] ?? '';
+
+                                        return FutureBuilder<DocumentSnapshot>(
+                                          future: _firestore
+                                              .collection('classes')
+                                              .doc(classId)
+                                              .get(),
+                                          builder: (context, classDoc) {
+                                            if (!classDoc.hasData) {
+                                              return const SizedBox.shrink();
+                                            }
+
+                                            final classData = (classDoc.data)
+                                                        ?.data()
+                                                    as Map<String, dynamic>? ??
+                                                <String, dynamic>{};
+                                            String subject =
+                                                classData['subject'] ??
+                                                    'Unknown Class';
+                                            String roomNumber =
+                                                classData['roomNumber'] ??
+                                                    'No Room';
+
+                                            return Card(
+                                              elevation: 1,
+                                              margin: const EdgeInsets.only(
+                                                  bottom: 8),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: ListTile(
+                                                leading: Container(
+                                                  padding:
+                                                      const EdgeInsets.all(8),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue
+                                                        .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.access_time,
+                                                    color: Colors.blue[800],
+                                                  ),
+                                                ),
+                                                title: Text(
+                                                  subject,
+                                                  style: GoogleFonts.golosText(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.blue[800],
+                                                  ),
+                                                ),
+                                                subtitle: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      '${_formatTimeString(startTime)} - ${_formatTimeString(endTime)}',
+                                                      style:
+                                                          GoogleFonts.golosText(
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      'Room: $roomNumber',
+                                                      style:
+                                                          GoogleFonts.golosText(
+                                                        fontSize: 12,
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 8),
+                                  ],
                                 );
                               },
                             );

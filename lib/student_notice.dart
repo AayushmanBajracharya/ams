@@ -21,99 +21,81 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
 
   Stream<List<DocumentSnapshot>> _getNoticesStream() async* {
     try {
-      debugPrint('Fetching enrolled classes...');
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
-        debugPrint('No user logged in');
         yield [];
         return;
       }
 
-      // 🔹 Get enrolled classes
-      final classesQuery = await _firestore
+      // First get user's enrolled classes
+      final enrolledClassesSnapshot = await _firestore
           .collection('classes')
           .where('students', arrayContains: currentUser.uid)
           .get();
 
-      if (classesQuery.docs.isEmpty) {
-        debugPrint('No enrolled classes found');
+      if (enrolledClassesSnapshot.docs.isEmpty) {
         yield [];
         return;
       }
 
-      final classIds = classesQuery.docs.map((doc) => doc.id).toList();
+      // Get class IDs and process in chunks (Firestore limit)
+      final classIds =
+          enrolledClassesSnapshot.docs.map((doc) => doc.id).toList();
+      final chunks = <List<String>>[];
 
-      debugPrint('Fetching notices for class IDs: $classIds');
-
-      // 🔹 Split class IDs into chunks of 10 (Firestore's whereIn limit)
-      final chunkSize = 10;
-      final chunks = [];
-      for (var i = 0; i < classIds.length; i += chunkSize) {
-        chunks.add(classIds.sublist(i,
-            i + chunkSize > classIds.length ? classIds.length : i + chunkSize));
+      // Process in chunks of 10 (Firestore limit for 'whereIn')
+      for (var i = 0; i < classIds.length; i += 10) {
+        chunks.add(classIds.sublist(
+            i, i + 10 > classIds.length ? classIds.length : i + 10));
       }
 
-      // 🔹 Fetch notices for each chunk
-      List<DocumentSnapshot> allNotices = [];
-      for (final chunk in chunks) {
-        var noticesQuery =
-            _firestore.collection('notices').where('class_id', whereIn: chunk);
+      // Create a stream controller for real-time updates
+      await for (final _ in Stream.periodic(const Duration(seconds: 1))) {
+        List<DocumentSnapshot> allNotices = [];
 
-        // 🔹 Ensure date field exists before ordering
-        var noticesSnapshot = await noticesQuery.limit(1).get();
-        if (noticesSnapshot.docs.isNotEmpty &&
-            noticesSnapshot.docs.first.data().containsKey('date')) {
-          noticesQuery = noticesQuery.orderBy('date', descending: true);
+        // Fetch notices for each chunk
+        for (final chunk in chunks) {
+          final noticesSnapshot = await _firestore
+              .collection('notices')
+              .where('class_id', whereIn: chunk)
+              .orderBy('date', descending: true)
+              .get();
+
+          allNotices.addAll(noticesSnapshot.docs);
         }
 
-        final notices = await noticesQuery.limit(50).get();
-        allNotices.addAll(notices.docs);
+        // Sort all notices by date
+        allNotices.sort((a, b) {
+          final aDate = (a.data() as Map<String, dynamic>)['date'] as Timestamp;
+          final bDate = (b.data() as Map<String, dynamic>)['date'] as Timestamp;
+          return bDate.compareTo(aDate);
+        });
+
+        yield allNotices;
       }
-
-      // 🔹 Sort all notices by date
-      allNotices.sort((a, b) {
-        final aDate = a['date'] as Timestamp;
-        final bDate = b['date'] as Timestamp;
-        return bDate.compareTo(aDate);
-      });
-
-      // 🔹 Yield the combined notices
-      yield allNotices;
-    } catch (e, stackTrace) {
+    } catch (e) {
       debugPrint('Error fetching notices: $e');
-      debugPrint('Stack trace: $stackTrace');
       yield [];
     }
   }
 
-  String _formatDate(dynamic date) {
-    if (date == null) return 'Date not available';
+  String _formatTimestamp(Timestamp timestamp) {
+    final DateTime dateTime = timestamp.toDate();
+    final DateTime now = DateTime.now();
+    final Duration difference = now.difference(dateTime);
 
-    try {
-      DateTime dateTime;
-      if (date is Timestamp) {
-        dateTime = date.toDate();
-      } else if (date is String) {
-        dateTime = DateTime.parse(date);
-      } else {
-        return 'Invalid date format';
-      }
-
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-
-      if (difference.inDays == 0) {
-        return 'Today ${DateFormat('h:mm a').format(dateTime)}';
-      } else if (difference.inDays == 1) {
-        return 'Yesterday ${DateFormat('h:mm a').format(dateTime)}';
-      } else if (difference.inDays < 7) {
-        return DateFormat('EEEE h:mm a').format(dateTime);
-      } else {
-        return DateFormat('MMMM d, y h:mm a').format(dateTime);
-      }
-    } catch (e) {
-      debugPrint('Error formatting date: $e');
-      return 'Date error';
+    if (difference.inDays == 0) {
+      // Today - show time
+      return 'Today at ${DateFormat('h:mm a').format(dateTime)}';
+    } else if (difference.inDays == 1) {
+      // Yesterday - show time
+      return 'Yesterday at ${DateFormat('h:mm a').format(dateTime)}';
+    } else if (difference.inDays < 7) {
+      // Within a week - show day and time
+      return '${DateFormat('EEEE').format(dateTime)} at ${DateFormat('h:mm a').format(dateTime)}';
+    } else {
+      // Older - show full date and time
+      return DateFormat('MMM d, y \'at\' h:mm a').format(dateTime);
     }
   }
 
@@ -123,12 +105,13 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
     }
 
     try {
-      final doc = await _firestore.collection('users').doc(teacherId).get();
-      final name = doc.data()?['username'] ?? 'Unknown Teacher';
-      _teacherCache[teacherId] = name;
-      return name;
+      final teacherDoc =
+          await _firestore.collection('users').doc(teacherId).get();
+
+      final teacherName = teacherDoc.data()?['username'] ?? 'Unknown Teacher';
+      _teacherCache[teacherId] = teacherName;
+      return teacherName;
     } catch (e) {
-      debugPrint('Error fetching teacher: $e');
       return 'Unknown Teacher';
     }
   }
@@ -139,275 +122,163 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
     }
 
     try {
-      final doc = await _firestore.collection('classes').doc(classId).get();
-      final subject = doc.data()?['subject'] ?? 'Unknown Subject';
+      final classDoc =
+          await _firestore.collection('classes').doc(classId).get();
+
+      final subject = classDoc.data()?['subject'] ?? 'Unknown Subject';
       _classCache[classId] = subject;
       return subject;
     } catch (e) {
-      debugPrint('Error fetching class: $e');
       return 'Unknown Subject';
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Notices',
-          style: GoogleFonts.golosText(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+  Widget _buildNoticeCard(
+      Map<String, dynamic> notice, String teacherName, String subject) {
+    final timestamp = notice['date'] as Timestamp;
+    final formattedDate = _formatTimestamp(timestamp);
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        onTap: () =>
+            _showNoticeDetails(notice, teacherName, subject, formattedDate),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          subject,
+                          style: GoogleFonts.golosText(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          notice['message'] ?? '',
+                          style: GoogleFonts.golosText(
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Divider(color: Colors.grey[300]),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_outline,
+                            size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            teacherName,
+                            style: GoogleFonts.golosText(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time,
+                          size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        formattedDate,
+                        style: GoogleFonts.golosText(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        backgroundColor: Colors.blueAccent,
-        elevation: 0,
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                _teacherCache.clear();
-                _classCache.clear();
-              });
-            },
-          ),
-        ],
-      ),
-      body: StreamBuilder<List<DocumentSnapshot>>(
-        stream: _getNoticesStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            debugPrint('StreamBuilder error: ${snapshot.error}');
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error loading notices',
-                      style: GoogleFonts.golosText(
-                        fontSize: 18,
-                        color: Colors.red,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Please check your connection and try again',
-                      style: GoogleFonts.golosText(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => setState(() {}),
-                      child: const Text('Try Again'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final notices = snapshot.data ?? [];
-
-          if (notices.isEmpty) {
-            return _buildNoNoticesWidget();
-          }
-
-          return RefreshIndicator(
-            onRefresh: () async {
-              setState(() {
-                _teacherCache.clear();
-                _classCache.clear();
-              });
-            },
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: notices.length,
-              itemBuilder: (context, index) {
-                final noticeData =
-                    notices[index].data() as Map<String, dynamic>;
-
-                return FutureBuilder<Map<String, String>>(
-                  future: Future.wait([
-                    _getTeacherName(noticeData['publishedBy']),
-                    _getSubject(noticeData['class_id']),
-                  ]).then((values) => {
-                        'teacherName': values[0],
-                        'subject': values[1],
-                      }),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      );
-                    }
-
-                    return _buildNoticeCard(
-                      title: snapshot.data!['subject']!,
-                      description: noticeData['message'] ?? 'No Description',
-                      date: _formatDate(noticeData['date']),
-                      teacherName: snapshot.data!['teacherName']!,
-                    );
-                  },
-                );
-              },
-            ),
-          );
-        },
       ),
     );
   }
 
-  Widget _buildNoNoticesWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.notifications_off, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            'No notices found',
-            style: GoogleFonts.golosText(
-              fontSize: 18,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => setState(() {}),
-            child: Text(
-              'Refresh',
-              style: GoogleFonts.golosText(
-                fontSize: 16,
-                color: Colors.blueAccent,
-              ),
-            ),
-          ),
-        ],
+  void _showNoticeDetails(Map<String, dynamic> notice, String teacherName,
+      String subject, String formattedDate) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-    );
-  }
-
-  Widget _buildNoticeCard({
-    required String title,
-    required String description,
-    required String date,
-    required String teacherName,
-  }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.only(bottom: 16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            builder: (context) => DraggableScrollableSheet(
-              initialChildSize: 0.6,
-              maxChildSize: 0.9,
-              minChildSize: 0.4,
-              expand: false,
-              builder: (context, scrollController) => SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.golosText(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueAccent,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      description,
-                      style: GoogleFonts.golosText(
-                        fontSize: 18,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Published by: $teacherName',
-                      style: GoogleFonts.golosText(
-                        fontSize: 16,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      date,
-                      style: GoogleFonts.golosText(
-                        fontSize: 16,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                title,
+                subject,
                 style: GoogleFonts.golosText(
-                  fontSize: 20,
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blueAccent,
+                  color: Colors.blue[800],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 20),
               Text(
-                description,
+                notice['message'] ?? '',
                 style: GoogleFonts.golosText(
                   fontSize: 16,
-                  color: Colors.grey[700],
+                  color: Colors.black87,
+                  height: 1.5,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 24),
+              Divider(color: Colors.grey[300]),
+              const SizedBox(height: 16),
               Row(
                 children: [
-                  Icon(Icons.person, size: 16, color: Colors.grey[600]),
-                  const SizedBox(width: 4),
+                  Icon(Icons.person_outline, size: 20, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      teacherName,
+                      'Published by $teacherName',
                       style: GoogleFonts.golosText(
                         fontSize: 14,
                         color: Colors.grey[600],
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -415,10 +286,10 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
-                  const SizedBox(width: 4),
+                  Icon(Icons.access_time, size: 20, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
                   Text(
-                    date,
+                    formattedDate,
                     style: GoogleFonts.golosText(
                       fontSize: 14,
                       color: Colors.grey[600],
@@ -429,6 +300,94 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.blue[800],
+        title: Text(
+          'Notices',
+          style: GoogleFonts.golosText(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: StreamBuilder<List<DocumentSnapshot>>(
+        stream: _getNoticesStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Error loading notices',
+                style: GoogleFonts.golosText(color: Colors.red),
+              ),
+            );
+          }
+
+          final notices = snapshot.data ?? [];
+
+          if (notices.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.notifications_off_outlined,
+                      size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No notices yet',
+                    style: GoogleFonts.golosText(
+                      fontSize: 18,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            itemCount: notices.length,
+            itemBuilder: (context, index) {
+              final notice = notices[index].data() as Map<String, dynamic>;
+
+              return FutureBuilder<Map<String, String>>(
+                future: Future.wait([
+                  _getTeacherName(notice['publishedBy']),
+                  _getSubject(notice['class_id']),
+                ]).then((values) => {
+                      'teacherName': values[0],
+                      'subject': values[1],
+                    }),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const SizedBox(
+                      height: 100,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  return _buildNoticeCard(
+                    notice,
+                    snapshot.data!['teacherName']!,
+                    snapshot.data!['subject']!,
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
