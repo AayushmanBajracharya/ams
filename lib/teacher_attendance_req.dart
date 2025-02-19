@@ -453,13 +453,13 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
   }
 
   Future<void> _exportAttendanceList(
-      List<Map<String, dynamic>> currentAttendance) async {
+      List<Map<String, dynamic>> attendanceList) async {
     try {
-      showDialog(
+      await showDialog(
         context: context,
         builder: (context) => DateRangePickerDialog(
           onDateRangeSelected: (startDate, endDate) async {
-            // Fetch saved attendance data from the date range
+            // Fetch saved attendance data from Firestore
             var savedAttendanceSnapshot = await _firestore
                 .collection('savedAttendance')
                 .where('classId', isEqualTo: widget.classId)
@@ -472,38 +472,70 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
                 .orderBy('date')
                 .get();
 
-            List<List<dynamic>> rows = [
-              ['Date', 'Class Name', 'Student Name', 'Status']
-            ];
+            // Map to store attendance data by student
+            Map<String, Map<String, String>> studentAttendanceMap = {};
 
             for (var doc in savedAttendanceSnapshot.docs) {
               var data = doc.data();
-              String className = data['className'] ?? widget.className;
               List<dynamic> attendanceList = data['attendanceList'] ?? [];
 
               for (var attendance in attendanceList) {
-                rows.add([
-                  attendance['date'],
-                  className,
-                  attendance['studentName'],
-                  attendance['status'],
-                ]);
+                String studentId = attendance['studentId'];
+                String studentName = attendance['studentName'];
+                String status = attendance['status'];
+                String date = attendance['date'];
+
+                // Initialize the student's attendance map if needed
+                studentAttendanceMap.putIfAbsent(
+                    studentId, () => {'Student Name': studentName});
+                studentAttendanceMap[studentId]![date] = status;
               }
             }
 
+            // Generate CSV data
+            List<List<dynamic>> rows = [];
+            List<dynamic> headerRow = ['Student Name'];
+
+            DateTime currentDate = startDate;
+            while (currentDate.isBefore(endDate) ||
+                currentDate.isAtSameMomentAs(endDate)) {
+              headerRow.add(DateFormat('MM-dd-yyyy').format(currentDate));
+              currentDate = currentDate.add(const Duration(days: 1));
+            }
+            rows.add(headerRow);
+
+            // Add each student's attendance data
+            studentAttendanceMap.forEach((studentId, attendanceData) {
+              List<dynamic> studentRow = [attendanceData['Student Name']];
+              currentDate = startDate;
+              while (currentDate.isBefore(endDate) ||
+                  currentDate.isAtSameMomentAs(endDate)) {
+                String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
+                studentRow.add(attendanceData[dateKey] ?? 'N/A');
+                currentDate = currentDate.add(const Duration(days: 1));
+              }
+              rows.add(studentRow);
+            });
+
+            // Convert rows to CSV format
             String csvData = const ListToCsvConverter().convert(rows);
+
+            // Save the CSV file
             final directory = await getExternalStorageDirectory();
-            final fileName =
-                'attendance_${widget.className}_${DateFormat('yyyy-MM-dd').format(startDate)}_to_${DateFormat('yyyy-MM-dd').format(endDate)}.csv';
-            final file = File('${directory?.path}/$fileName');
+            if (directory == null) {
+              throw Exception("External storage directory not found.");
+            }
+
+            final fileName = await _generateFileName();
+            final filePath = '${directory.path}/$fileName';
+            final file = File(filePath);
             await file.writeAsString(csvData);
 
-            final xFile = XFile(file.path);
-
             // Share the file
+            final xFile = XFile(file.path);
             await Share.shareXFiles(
               [xFile],
-              text: 'Attendance Report',
+              text: 'Attendance Report for ${widget.className}',
             );
 
             ScaffoldMessenger.of(context).showSnackBar(
@@ -524,6 +556,18 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
         ),
       );
     }
+  }
+
+  Future<String> _generateFileName() async {
+    final directory = await getExternalStorageDirectory();
+    if (directory == null) return 'attendancerecord1.csv'; // Fallback if null
+
+    int fileNumber = 1;
+    while (File('${directory.path}/attendancerecord$fileNumber.csv')
+        .existsSync()) {
+      fileNumber++;
+    }
+    return 'attendancerecord$fileNumber.csv';
   }
 
   void _showEditDialog(String studentId, String studentName, String status) {
