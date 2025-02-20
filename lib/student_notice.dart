@@ -27,7 +27,7 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
         return;
       }
 
-      // First get user's enrolled classes
+      // Get user's enrolled classes
       final enrolledClassesSnapshot = await _firestore
           .collection('classes')
           .where('students', arrayContains: currentUser.uid)
@@ -38,25 +38,30 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
         return;
       }
 
-      // Get class IDs and process in chunks (Firestore limit)
+      // Get class IDs
       final classIds =
           enrolledClassesSnapshot.docs.map((doc) => doc.id).toList();
-      final chunks = <List<String>>[];
 
-      // Process in chunks of 10 (Firestore limit for 'whereIn')
-      for (var i = 0; i < classIds.length; i += 10) {
-        chunks.add(classIds.sublist(
-            i, i + 10 > classIds.length ? classIds.length : i + 10));
-      }
-
-      // Create a stream controller for real-time updates
-      await for (final _ in Stream.periodic(const Duration(seconds: 1))) {
+      // If classIds are within Firestore limit for 'whereIn'
+      if (classIds.length <= 10) {
+        yield* _firestore
+            .collection('notice')
+            .where('class_id', whereIn: classIds)
+            .snapshots()
+            .map((snapshot) => snapshot.docs);
+      } else {
+        // Handle in chunks if more than 10
         List<DocumentSnapshot> allNotices = [];
+        final chunks = <List<String>>[];
 
-        // Fetch notices for each chunk
+        for (var i = 0; i < classIds.length; i += 10) {
+          chunks.add(classIds.sublist(
+              i, i + 10 > classIds.length ? classIds.length : i + 10));
+        }
+
         for (final chunk in chunks) {
           final noticesSnapshot = await _firestore
-              .collection('notices')
+              .collection('notice')
               .where('class_id', whereIn: chunk)
               .orderBy('date', descending: true)
               .get();
@@ -64,7 +69,6 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
           allNotices.addAll(noticesSnapshot.docs);
         }
 
-        // Sort all notices by date
         allNotices.sort((a, b) {
           final aDate = (a.data() as Map<String, dynamic>)['date'] as Timestamp;
           final bDate = (b.data() as Map<String, dynamic>)['date'] as Timestamp;
@@ -73,8 +77,8 @@ class _StudentNoticesScreenState extends State<StudentNoticesScreen> {
 
         yield allNotices;
       }
-    } catch (e) {
-      debugPrint('Error fetching notices: $e');
+    } catch (e, stackTrace) {
+      debugPrint('Stack Trace: $stackTrace');
       yield [];
     }
   }

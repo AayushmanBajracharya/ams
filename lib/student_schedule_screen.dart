@@ -24,6 +24,7 @@ class _StudentScheduleScreenState extends State<StudentScheduleScreen> {
     'Sunday'
   ];
 
+  /// Group schedules by day and sort by start time
   Map<String, List<Map<String, dynamic>>> groupSchedulesByDay(
       List<DocumentSnapshot> schedules) {
     Map<String, List<Map<String, dynamic>>> grouped = {};
@@ -52,6 +53,47 @@ class _StudentScheduleScreenState extends State<StudentScheduleScreen> {
     return grouped;
   }
 
+  /// Get stream of schedules for enrolled classes
+  Stream<List<DocumentSnapshot>> _getSchedulesStream() async* {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        yield [];
+        return;
+      }
+
+      // Get user's enrolled classes
+      final enrollmentSnapshot = await _firestore
+          .collection('classes')
+          .where('students', arrayContains: currentUser.uid)
+          .get();
+
+      if (enrollmentSnapshot.docs.isEmpty) {
+        yield [];
+
+        return;
+      }
+
+      // Get list of enrolled class IDs
+      List<String> enrolledClassIds = enrollmentSnapshot.docs
+          .map((doc) => doc.id) // Use the document ID as the class ID
+          .toList();
+
+      //ugPrint(enrolledClassIds as String?);
+
+      // Fetch schedules for the enrolled class IDs
+      final scheduleSnapshot = await _firestore
+          .collection('schedule')
+          .where('class_id', whereIn: enrolledClassIds)
+          .get();
+
+      yield scheduleSnapshot.docs;
+    } catch (e) {
+      debugPrint('Error fetching schedules: $e');
+      yield [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -72,125 +114,90 @@ class _StudentScheduleScreenState extends State<StudentScheduleScreen> {
         ),
         centerTitle: true,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        // First get the student's enrolled classes
-        stream: _firestore
-            .collection('enrollments')
-            .where('studentId', isEqualTo: _auth.currentUser?.uid)
-            .snapshots(),
-        builder: (context, enrollmentSnapshot) {
-          if (enrollmentSnapshot.hasError) {
-            return Center(child: Text('Error: ${enrollmentSnapshot.error}'));
+      body: StreamBuilder<List<DocumentSnapshot>>(
+        stream: _getSchedulesStream(),
+        builder: (context, scheduleSnapshot) {
+          if (scheduleSnapshot.hasError) {
+            return Center(child: Text('Error: ${scheduleSnapshot.error}'));
           }
 
-          if (enrollmentSnapshot.connectionState == ConnectionState.waiting) {
+          if (scheduleSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!enrollmentSnapshot.hasData ||
-              enrollmentSnapshot.data!.docs.isEmpty) {
+          if (!scheduleSnapshot.hasData || scheduleSnapshot.data!.isEmpty) {
             return _buildNoScheduleWidget();
           }
 
-          // Get list of enrolled class IDs
-          List<String> enrolledClassIds = enrollmentSnapshot.data!.docs
-              .map((doc) => doc.get('classId') as String)
-              .toList();
+          final groupedSchedules = groupSchedulesByDay(scheduleSnapshot.data!);
 
-          return StreamBuilder<QuerySnapshot>(
-            // Get schedules for enrolled classes
-            stream: _firestore
-                .collection('schedule')
-                .where('class_id', whereIn: enrolledClassIds)
-                .snapshots(),
-            builder: (context, scheduleSnapshot) {
-              if (scheduleSnapshot.hasError) {
-                return Center(child: Text('Error: ${scheduleSnapshot.error}'));
-              }
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: daysOrder.map((day) {
+                final schedules = groupedSchedules[day] ?? [];
+                if (schedules.isEmpty) return const SizedBox.shrink();
 
-              if (scheduleSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (!scheduleSnapshot.hasData ||
-                  scheduleSnapshot.data!.docs.isEmpty) {
-                return _buildNoScheduleWidget();
-              }
-
-              final groupedSchedules =
-                  groupSchedulesByDay(scheduleSnapshot.data!.docs);
-
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: daysOrder.map((day) {
-                    final schedules = groupedSchedules[day] ?? [];
-                    if (schedules.isEmpty) return const SizedBox.shrink();
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.symmetric(vertical: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[800],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            day,
-                            style: GoogleFonts.golosText(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[800],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        day,
+                        style: GoogleFonts.golosText(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
-                        ...schedules.map((schedule) {
-                          final classId = schedule['class_id'] ?? 'Unknown ID';
-                          final time =
-                              "${schedule['start_time']} - ${schedule['end_time']}";
+                      ),
+                    ),
+                    ...schedules.map((schedule) {
+                      final classId = schedule['class_id'] ?? 'Unknown ID';
+                      final time =
+                          "${schedule['start_time']} - ${schedule['end_time']}";
+
+                      return FutureBuilder<DocumentSnapshot>(
+                        future:
+                            _firestore.collection('classes').doc(classId).get(),
+                        builder: (context, classSnapshot) {
+                          if (!classSnapshot.hasData) {
+                            return const SizedBox.shrink();
+                          }
+
+                          final classData = classSnapshot.data!.data()
+                              as Map<String, dynamic>;
+                          final subject =
+                              classData['subject'] ?? 'Unknown Class';
+                          final teacherId = classData['teacherId'];
 
                           return FutureBuilder<DocumentSnapshot>(
                             future: _firestore
-                                .collection('classes')
-                                .doc(classId)
+                                .collection('users')
+                                .doc(teacherId)
                                 .get(),
-                            builder: (context, classSnapshot) {
-                              if (!classSnapshot.hasData) {
-                                return const SizedBox.shrink();
-                              }
-
-                              final classData = classSnapshot.data!.data()
-                                  as Map<String, dynamic>;
-                              final subject =
-                                  classData['subject'] ?? 'Unknown Class';
-                              final teacherId = classData['teacherId'];
-
-                              return FutureBuilder<DocumentSnapshot>(
-                                future: _firestore
-                                    .collection('users')
-                                    .doc(teacherId)
-                                    .get(),
-                                builder: (context, teacherSnapshot) {
-                                  final teacherName =
-                                      teacherSnapshot.data?.get('username') ??
-                                          'Unknown Teacher';
-                                  return _buildScheduleCard(
-                                      subject, teacherName, time);
-                                },
-                              );
+                            builder: (context, teacherSnapshot) {
+                              final teacherName =
+                                  teacherSnapshot.data?.get('username') ??
+                                      'Unknown Teacher';
+                              return _buildScheduleCard(
+                                  subject, teacherName, time);
                             },
                           );
-                        }).toList(),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  }).toList(),
-                ),
-              );
-            },
+                        },
+                      );
+                    }),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              }).toList(),
+            ),
           );
         },
       ),
@@ -252,31 +259,15 @@ class _StudentScheduleScreenState extends State<StudentScheduleScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    subject,
-                    style: GoogleFonts.golosText(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue[800],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(subject,
+                      style: GoogleFonts.golosText(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[800],
+                      )),
                   const SizedBox(height: 4),
-                  Text(
-                    teacherName,
-                    style: GoogleFonts.golosText(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  Text(
-                    'Time: $time',
-                    style: GoogleFonts.golosText(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
+                  Text(teacherName),
+                  Text('Time: $time'),
                 ],
               ),
             ),

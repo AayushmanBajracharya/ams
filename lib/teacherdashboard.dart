@@ -323,16 +323,14 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    const TeacherMyClass(), // Navigate to the new screen
+                                builder: (context) => const TeacherMyClass(),
                               ),
                             );
                           },
                           child: _buildDashboardCard(
                             icon: Icons.class_,
                             title: 'My Classes',
-                            value:
-                                '$numberOfClasses', // Show the number of classes created
+                            value: '',
                             color: Colors.blue,
                           ),
                         ),
@@ -341,8 +339,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    const TeacherNotice(), // Navigate to the new screen
+                                builder: (context) => const TeacherNotice(),
                               ),
                             );
                           },
@@ -355,16 +352,13 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                         ),
                         InkWell(
                           onTap: () {
-                            // Navigate to ClassAttendanceScreen
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) =>
                                     AttendanceclassDetailsScreen(
-                                  classId:
-                                      'your_class_id', // Replace with actual class ID
-                                  className:
-                                      'your_class_name', // Replace with actual class name
+                                  classId: 'your_class_id',
+                                  className: 'your_class_name',
                                 ),
                               ),
                             );
@@ -372,7 +366,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                           child: _buildDashboardCard(
                             icon: Icons.assignment,
                             title: 'Attendance Requests',
-                            value: '', // Replace with actual count
+                            value: '',
                             color: Colors.orange,
                           ),
                         ),
@@ -381,14 +375,13 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    TeacherMessageScreen(), // Navigate to the new screen
+                                builder: (context) => TeacherMessageScreen(),
                               ),
                             );
                           },
                           child: _buildDashboardCard(
                             icon: Icons.message,
-                            title: 'New Messages',
+                            title: 'Leave Request',
                             value: '',
                             color: Colors.purple,
                           ),
@@ -490,7 +483,6 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                               );
                             }
 
-                            // Group schedules by day
                             Map<String, List<Map<String, dynamic>>>
                                 schedulesByDay = {};
                             final weekDays = [
@@ -515,7 +507,7 @@ class _TeacherDashBoardState extends State<TeacherDashBoard> {
                               if (schedulesByDay.containsKey(day)) {
                                 schedulesByDay[day]!.add({
                                   ...data,
-                                  'id': doc.id, // Add document ID for reference
+                                  'id': doc.id,
                                 });
                               }
                             }

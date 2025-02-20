@@ -162,7 +162,7 @@ class _StudentMyClassesScreenState extends State<StudentMyClassesScreen> {
                           ),
                           SizedBox(height: 8),
                           Text(
-                            'Schedule: ${classData['schedule'] ?? 'Not available'}',
+                            'ClassCode: ${classData['classCode'] ?? 'Not available'}',
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey[700],
@@ -238,7 +238,7 @@ class ClassDetailsScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             Text(
-              "Schedule: ${classData['schedule'] ?? 'Not available'}",
+              "ClassCode: ${classData['classCode'] ?? 'Not available'}",
               style: TextStyle(
                 fontSize: 18,
                 color: Colors.grey[700],

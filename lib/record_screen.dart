@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'messages.dart';
+import 'student_schedule_screen.dart';
 
 class RecordsScreen extends StatelessWidget {
   const RecordsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       backgroundColor: Colors.blue[50],
       appBar: AppBar(
@@ -17,255 +23,426 @@ class RecordsScreen extends StatelessWidget {
             color: Colors.blue[800],
           ),
         ),
-        actions: [
-          IconButton(
-            icon: Stack(
-              children: [
-                Icon(Icons.notifications_outlined, color: Colors.blue[800]),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 12,
-                      minHeight: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: Icon(Icons.settings_outlined, color: Colors.blue[800]),
-            onPressed: () {},
-          ),
-        ],
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Profile and Summary Card
-            Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue[800]!, Colors.blue[600]!],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.blue.withOpacity(0.3),
-                    spreadRadius: 2,
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(
-                          Icons.person_outline,
-                          size: 40,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'John Doe',
-                              style: GoogleFonts.golosText(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            Text(
-                              'Computer Science - Year 2',
-                              style: GoogleFonts.golosText(
-                                fontSize: 16,
-                                color: Colors.white.withOpacity(0.9),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildAttendanceIndicator(
-                            'Present', '85%', Colors.green[300]!),
-                        _buildVerticalDivider(),
-                        _buildAttendanceIndicator(
-                            'Absent', '10%', Colors.red[300]!),
-                        _buildVerticalDivider(),
-                        _buildAttendanceIndicator(
-                            'Leave', '5%', Colors.orange[300]!),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser?.uid)
+            .snapshots(),
+        builder: (context, userSnapshot) {
+          if (userSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            // Quick Actions Grid
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Quick Actions',
-                        style: GoogleFonts.golosText(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[900],
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {},
-                        child: Text(
-                          'View All',
-                          style: GoogleFonts.golosText(
-                            color: Colors.blue[800],
-                            fontWeight: FontWeight.w600,
+          final userData = userSnapshot.data?.data() as Map<String, dynamic>?;
+          final username = userData?['username'] ?? 'User';
+
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('attendance')
+                .where('studentId', isEqualTo: currentUser?.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              // Calculate overall attendance statistics
+              final records = snapshot.data?.docs ?? [];
+              final totalClasses = records.length;
+              int attendedClasses = 0;
+
+              for (var record in records) {
+                final data = record.data() as Map<String, dynamic>;
+                if (data['status'] == 'P') {
+                  attendedClasses++;
+                }
+              }
+
+              final absentClasses = totalClasses - attendedClasses;
+
+              // Calculate percentages
+              final presentPercentage = totalClasses > 0
+                  ? '${(attendedClasses / totalClasses * 100).toStringAsFixed(1)}%'
+                  : '0%';
+              final absentPercentage = totalClasses > 0
+                  ? '${(absentClasses / totalClasses * 100).toStringAsFixed(1)}%'
+                  : '0%';
+              // Add StreamBuilder for leave requests
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('leave_requests')
+                    .where('studentId', isEqualTo: currentUser?.uid)
+                    .where('status', isEqualTo: 'approved')
+                    .snapshots(),
+                builder: (context, leaveSnapshot) {
+                  if (leaveSnapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  // Count approved leave requests
+                  final approvedLeaves = leaveSnapshot.data?.docs.length ?? 0;
+                  return SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Profile and Summary Card
+                        Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.blue[800]!, Colors.blue[600]!],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.3),
+                                spreadRadius: 2,
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Icon(
+                                      Icons.person_outline,
+                                      size: 40,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          username,
+                                          style: GoogleFonts.golosText(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceAround,
+                                  children: [
+                                    _buildAttendanceIndicator('Present',
+                                        presentPercentage, Colors.green[300]!),
+                                    _buildVerticalDivider(),
+                                    _buildAttendanceIndicator('Absent',
+                                        absentPercentage, Colors.red[300]!),
+                                    _buildVerticalDivider(),
+                                    _buildAttendanceIndicator(
+                                        'Leave',
+                                        approvedLeaves.toString(),
+                                        Colors.orange[300]!),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1.5,
-                    children: [
-                      _buildQuickActionCard(
-                        'Mark Attendance',
-                        'Check-in for today',
-                        Icons.qr_code_scanner_outlined,
-                        Colors.green[700]!,
-                        context,
-                      ),
-                      _buildQuickActionCard(
-                        'Request Leave',
-                        'Submit application',
-                        Icons.event_busy_outlined,
-                        Colors.orange[700]!,
-                        context,
-                      ),
-                      _buildQuickActionCard(
-                        'View Schedule',
-                        'Today\'s classes',
-                        Icons.schedule_outlined,
-                        Colors.purple[700]!,
-                        context,
-                      ),
-                      _buildQuickActionCard(
-                        'Reports',
-                        'Monthly summary',
-                        Icons.bar_chart_outlined,
-                        Colors.blue[700]!,
-                        context,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
 
-            // Recent Activity
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Recent Activity',
-                    style: GoogleFonts.golosText(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue[900],
+                        // Quick Actions Grid
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Quick Actions',
+                                style: GoogleFonts.golosText(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[900],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              GridView.count(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                crossAxisCount: 2,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                childAspectRatio: 1.5,
+                                children: [
+                                  _buildQuickActionCard(
+                                    title: 'Request Leave',
+                                    subtitle: 'Submit application',
+                                    icon: Icons.event_busy_outlined,
+                                    color: Colors.orange[700]!,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => MessageScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  _buildQuickActionCard(
+                                    title: 'View Schedule',
+                                    subtitle: 'Today\'s classes',
+                                    icon: Icons.schedule_outlined,
+                                    color: Colors.purple[700]!,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              StudentScheduleScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // My Classes Section
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'My Classes',
+                                style: GoogleFonts.golosText(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[900],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              FutureBuilder<QuerySnapshot>(
+                                future: FirebaseFirestore.instance
+                                    .collection('attendance')
+                                    .where('studentId',
+                                        isEqualTo: currentUser?.uid)
+                                    .get(),
+                                builder: (context, attendanceSnapshot) {
+                                  if (attendanceSnapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
+                                  }
+
+                                  final attendanceRecords =
+                                      attendanceSnapshot.data?.docs ?? [];
+
+                                  if (attendanceRecords.isEmpty) {
+                                    return _buildEmptyClassesCard();
+                                  }
+
+                                  // Extract unique class IDs and organize session data
+                                  Map<String, Map<String, dynamic>>
+                                      classesData = {};
+                                  Map<String, Set<String>> sessionDates = {};
+
+                                  // First pass - collect all unique classes and their basic info
+                                  for (var record in attendanceRecords) {
+                                    final data =
+                                        record.data() as Map<String, dynamic>;
+                                    final classId = data['classId'] as String?;
+
+                                    if (classId != null) {
+                                      if (!classesData.containsKey(classId)) {
+                                        classesData[classId] = {
+                                          'classId': classId,
+                                          'title': data['subject'] ??
+                                              'Unknown Subject',
+                                          'teacherId': data['teacherId'] ??
+                                              'Unknown Instructor',
+                                          'schedule':
+                                              'Class Sessions: ${data['date'] ?? 'Schedule not available'}',
+                                          'presentCount': 0,
+                                          'totalDates': <String>{},
+                                        };
+                                        sessionDates[classId] = <String>{};
+                                      }
+
+                                      // Add this session date to the set of sessions for this class
+                                      final sessionDate =
+                                          data['date'] as String?;
+                                      if (sessionDate != null) {
+                                        sessionDates[classId]!.add(sessionDate);
+                                      }
+
+                                      // Count present sessions
+                                      if (data['status'] == 'P') {
+                                        classesData[classId]!['presentCount'] =
+                                            (classesData[classId]![
+                                                    'presentCount'] as int) +
+                                                1;
+                                      }
+                                    }
+                                  }
+
+                                  // Update each class with the total unique session dates
+                                  for (var classId in classesData.keys) {
+                                    classesData[classId]!['totalDates'] =
+                                        sessionDates[classId]!;
+                                  }
+
+                                  if (classesData.isEmpty) {
+                                    return _buildEmptyClassesCard();
+                                  }
+
+                                  // Fetch additional class details from Firestore
+                                  return FutureBuilder<List<Widget>>(
+                                    future: Future.wait(
+                                      classesData.values.map((classData) async {
+                                        final classId =
+                                            classData['classId'] as String;
+                                        final presentCount =
+                                            classData['presentCount'] as int;
+                                        final totalDates =
+                                            (classData['totalDates']
+                                                    as Set<String>)
+                                                .length;
+
+                                        final attendancePercentage =
+                                            totalDates > 0
+                                                ? (presentCount /
+                                                        totalDates *
+                                                        100)
+                                                    .toInt()
+                                                : 0;
+
+                                        // Extract initial data
+                                        String teacherId =
+                                            classData['teacherId'] as String;
+                                        String teacherName =
+                                            teacherId; // Default to ID if name can't be found
+                                        String subjectName =
+                                            classData['title'] as String;
+
+                                        try {
+                                          // 1. First try to fetch class details from classes collection
+                                          final classDoc =
+                                              await FirebaseFirestore.instance
+                                                  .collection('classes')
+                                                  .doc(classId)
+                                                  .get();
+
+                                          if (classDoc.exists) {
+                                            final classDetails =
+                                                classDoc.data();
+                                            if (classDetails != null) {
+                                              // Extract subject information from class document
+                                              if (classDetails
+                                                  .containsKey('subjectName')) {
+                                                subjectName =
+                                                    classDetails['subjectName']
+                                                        as String;
+                                              } else if (classDetails
+                                                  .containsKey('subject')) {
+                                                subjectName =
+                                                    classDetails['subject']
+                                                        as String;
+                                              }
+
+                                              // Ensure we have teacher ID
+                                              if (classDetails
+                                                  .containsKey('teacherId')) {
+                                                teacherId =
+                                                    classDetails['teacherId']
+                                                        as String;
+                                              }
+                                            }
+                                          }
+
+                                          // 2. Get teacher name using the teacherId
+                                          final teacherDoc =
+                                              await FirebaseFirestore.instance
+                                                  .collection('users')
+                                                  .doc(teacherId)
+                                                  .get();
+
+                                          if (teacherDoc.exists) {
+                                            final teacherData =
+                                                teacherDoc.data();
+                                            if (teacherData != null &&
+                                                teacherData
+                                                    .containsKey('username')) {
+                                              teacherName =
+                                                  teacherData['username']
+                                                      as String;
+                                            }
+                                          }
+                                        } catch (e) {
+                                          print(
+                                              'Error fetching details for class $classId: $e');
+                                        }
+
+                                        return _buildClassCard(
+                                          subjectName,
+                                          classData['schedule'] as String,
+                                          attendancePercentage,
+                                          presentCount,
+                                          totalDates,
+                                          teacherName,
+                                        );
+                                      }).toList(),
+                                    ),
+                                    builder: (context, cardsSnapshot) {
+                                      if (cardsSnapshot.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return const Center(
+                                            child: CircularProgressIndicator());
+                                      }
+
+                                      return Column(
+                                        children: cardsSnapshot.data ?? [],
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildActivityCard(
-                    'Attendance Marked',
-                    'Computer Networks - 9:00 AM',
-                    Icons.check_circle_outline,
-                    Colors.green[700]!,
-                    '2m ago',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildActivityCard(
-                    'Leave Approved',
-                    'Request for 15th Feb approved',
-                    Icons.event_available_outlined,
-                    Colors.blue[700]!,
-                    '2h ago',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildActivityCard(
-                    'Missed Class',
-                    'Database Management - 2:00 PM',
-                    Icons.warning_amber_outlined,
-                    Colors.orange[700]!,
-                    'Yesterday',
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
-        backgroundColor: Colors.blue[800],
-        icon: const Icon(Icons.qr_code_scanner_outlined),
-        label: Text(
-          'Quick Mark',
-          style: GoogleFonts.golosText(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -301,26 +478,19 @@ class RecordsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickActionCard(
-    String title,
-    String subtitle,
-    IconData icon,
-    Color color,
-    BuildContext context,
-  ) {
+  Widget _buildQuickActionCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => BlankPage(title: title),
-            ),
-          );
-        },
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -355,98 +525,151 @@ class RecordsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildActivityCard(
-    String title,
-    String subtitle,
-    IconData icon,
-    Color color,
-    String time,
+  Widget _buildClassCard(
+    String className,
+    String schedule,
+    int attendancePercentage,
+    int attendedSessions,
+    int totalSessions,
+    String instructor,
   ) {
+    Color progressColor;
+    if (attendancePercentage >= 85) {
+      progressColor = Colors.green;
+    } else if (attendancePercentage >= 75) {
+      progressColor = Colors.orange;
+    } else {
+      progressColor = Colors.red;
+    }
+
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  className,
                   style: GoogleFonts.golosText(
-                    fontSize: 16,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.blue[900],
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  subtitle,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: progressColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: progressColor.withOpacity(0.5)),
+                ),
+                child: Text(
+                  '$attendancePercentage%',
                   style: GoogleFonts.golosText(
                     fontSize: 14,
-                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                    color: progressColor,
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            schedule,
+            style: GoogleFonts.golosText(
+              fontSize: 14,
+              color: Colors.grey[600],
             ),
           ),
+          const SizedBox(height: 4),
           Text(
-            time,
+            'Instructor: $instructor',
+            style: GoogleFonts.golosText(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: totalSessions > 0 ? attendedSessions / totalSessions : 0,
+              backgroundColor: Colors.grey[200],
+              color: progressColor,
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Attended $attendedSessions out of $totalSessions sessions',
             style: GoogleFonts.golosText(
               fontSize: 12,
-              color: Colors.grey[500],
+              color: Colors.grey[600],
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class BlankPage extends StatelessWidget {
-  final String title;
-  const BlankPage({super.key, required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          title,
-          style: GoogleFonts.golosText(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.blue[800],
-          ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.blue[800]),
-          onPressed: () => Navigator.pop(context),
-        ),
+  Widget _buildEmptyClassesCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!),
       ),
-      body: Center(
-        child: Text(
-          'Coming Soon',
-          style: GoogleFonts.golosText(
-            fontSize: 20,
-            color: Colors.grey[500],
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.school_outlined,
+            size: 48,
+            color: Colors.blue[300],
           ),
-        ),
+          const SizedBox(height: 16),
+          Text(
+            'No Classes Found',
+            style: GoogleFonts.golosText(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue[900],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You are not enrolled in any classes yet',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.golosText(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
       ),
     );
   }
