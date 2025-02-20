@@ -11,13 +11,11 @@ import 'package:share_plus/share_plus.dart';
 class AttendanceclassDetailsScreen extends StatefulWidget {
   final String classId;
   final String className;
-
   const AttendanceclassDetailsScreen({
     Key? key,
     required this.classId,
     required this.className,
   }) : super(key: key);
-
   @override
   State<AttendanceclassDetailsScreen> createState() =>
       _ClassAttendanceScreenState();
@@ -26,7 +24,6 @@ class AttendanceclassDetailsScreen extends StatefulWidget {
 class _ClassAttendanceScreenState extends State<AttendanceclassDetailsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -56,15 +53,12 @@ class _ClassAttendanceScreenState extends State<AttendanceclassDetailsScreen> {
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
           }
-
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return _buildNoClassesWidget();
           }
-
           return ListView.builder(
             padding: const EdgeInsets.all(16.0),
             itemCount: snapshot.data!.docs.length,
@@ -72,7 +66,6 @@ class _ClassAttendanceScreenState extends State<AttendanceclassDetailsScreen> {
               final classData =
                   snapshot.data!.docs[index].data() as Map<String, dynamic>;
               final classId = snapshot.data!.docs[index].id;
-
               return _buildClassCard(
                 classData,
                 classId,
@@ -117,7 +110,6 @@ class _ClassAttendanceScreenState extends State<AttendanceclassDetailsScreen> {
     final String classCode = classData['classCode'] ?? 'No Code';
     final int studentCount =
         (classData['students'] as List<dynamic>?)?.length ?? 0;
-
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
@@ -214,13 +206,11 @@ class _ClassAttendanceScreenState extends State<AttendanceclassDetailsScreen> {
 class AttendanceDetailsScreen extends StatefulWidget {
   final String classId;
   final String className;
-
   const AttendanceDetailsScreen({
     Key? key,
     required this.classId,
     required this.className,
   }) : super(key: key);
-
   @override
   State<AttendanceDetailsScreen> createState() =>
       _AttendanceDetailsScreenState();
@@ -252,27 +242,46 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
         .where('classId', isEqualTo: widget.classId)
         .snapshots()
         .asyncMap((studentsSnapshot) async {
-      // Get attendance data
       var attendanceSnapshot = await _firestore
           .collection('attendance')
           .where('classId', isEqualTo: widget.classId)
           .where('date', isEqualTo: today)
           .get();
 
-      // Create attendance map
+      print(
+          "Debug: Number of attendance records found: ${attendanceSnapshot.docs.length}");
+
+      // Create a map for quick lookup
       Map<String, String> attendanceMap = {};
       for (var doc in attendanceSnapshot.docs) {
         var data = doc.data();
-        attendanceMap[data['studentId'] as String] = data['status'] as String;
+        var studentId = data['studentId'] as String? ?? ''; // Ensure valid key
+        var status = data['status'] as String? ?? 'N/A';
+
+        // Print to verify studentId and status
+        print("Debug: Found attendance for $studentId with status: $status");
+
+        if (studentId.isNotEmpty) {
+          attendanceMap[studentId] = status;
+        }
       }
 
-      // Create final list
       return studentsSnapshot.docs.map((studentDoc) {
         var data = studentDoc.data();
+        var studentId = data['studentId'] as String? ??
+            ''; // Use the studentId field here, not studentDoc.id
+
+        print(
+            "Debug: Processing student: ${data['studentName']} with ID: $studentId");
+
+        // Fetch the correct status from attendanceMap
+        String status = attendanceMap[studentId] ?? 'N/A';
+        print("Debug: Found status for student $studentId: $status");
+
         return {
-          'studentId': studentDoc.id,
+          'studentId': studentId,
           'studentName': data['studentName'] ?? 'Unknown Student',
-          'status': attendanceMap[studentDoc.id] ?? 'N/A',
+          'status': status,
           'date': today,
         };
       }).toList();
@@ -282,32 +291,48 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
   Future<void> _updateStudentInfo(
       String studentId, String newName, String newStatus) async {
     try {
-      // Update name in enrolledStudents
-      await _firestore
+      // Update the student's name in the enrolledStudents collection
+      var studentQuery = await _firestore
           .collection('enrolledStudents')
-          .doc(studentId)
-          .update({'studentName': newName});
+          .where('studentId', isEqualTo: studentId)
+          .where('classId', isEqualTo: widget.classId)
+          .get();
 
-      // Update or create attendance record
-      var attendanceSnapshot = await _firestore
+      if (studentQuery.docs.isNotEmpty) {
+        await studentQuery.docs.first.reference.update({
+          'studentName': newName,
+        });
+      } else {
+        print("Error: Student $studentId does not exist in enrolledStudents.");
+        return;
+      }
+
+      // Update the attendance record for today
+      var attendanceQuery = await _firestore
           .collection('attendance')
           .where('studentId', isEqualTo: studentId)
+          .where('classId', isEqualTo: widget.classId)
           .where('date', isEqualTo: today)
           .get();
 
-      if (attendanceSnapshot.docs.isNotEmpty) {
-        await attendanceSnapshot.docs.first.reference.update({
+      if (attendanceQuery.docs.isNotEmpty) {
+        await attendanceQuery.docs.first.reference.update({
           'status': newStatus,
+          'studentName': newName, // Keep names consistent
         });
       } else {
+        // Create a new attendance record if it doesn't exist
         await _firestore.collection('attendance').add({
           'classId': widget.classId,
           'studentId': studentId,
+          'studentName': newName,
           'date': today,
           'status': newStatus,
+          'timestamp': FieldValue.serverTimestamp(),
         });
       }
 
+      // Show a success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Student information updated successfully!'),
@@ -325,16 +350,90 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
     }
   }
 
+  Future<void> _saveAttendanceRecord(
+      String studentId, String studentName, String status) async {
+    try {
+      // Check if there's an existing record for today
+      var existingRecord = await _firestore
+          .collection('savedAttendance')
+          .where('classId', isEqualTo: widget.classId)
+          .where('date', isEqualTo: today)
+          .get();
+
+      if (existingRecord.docs.isNotEmpty) {
+        // Update existing record
+        var doc = existingRecord.docs.first;
+        List<dynamic> attendanceList = List.from(doc['attendanceList'] ?? []);
+
+        // Find and update or add student record
+        int studentIndex =
+            attendanceList.indexWhere((item) => item['studentId'] == studentId);
+        Map<String, dynamic> studentRecord = {
+          'studentId': studentId,
+          'studentName': studentName,
+          'status': status,
+          'date': today,
+        };
+
+        if (studentIndex >= 0) {
+          attendanceList[studentIndex] = studentRecord;
+        } else {
+          attendanceList.add(studentRecord);
+        }
+
+        await doc.reference.update({
+          'attendanceList': attendanceList,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Create new record
+        await _firestore.collection('savedAttendance').add({
+          'classId': widget.classId,
+          'className': widget.className,
+          'date': today,
+          'attendanceList': [
+            {
+              'studentId': studentId,
+              'studentName': studentName,
+              'status': status,
+              'date': today,
+            }
+          ],
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      print("Error saving attendance record: $e");
+      throw e;
+    }
+  }
+
   Future<void> _saveAttendanceList(
       List<Map<String, dynamic>> attendanceList) async {
     try {
-      await _firestore.collection('savedAttendance').add({
-        'classId': widget.classId,
-        'className': widget.className,
-        'date': today,
-        'attendanceList': attendanceList,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
+      // Check if there's an existing record for today
+      var existingRecord = await _firestore
+          .collection('savedAttendance')
+          .where('classId', isEqualTo: widget.classId)
+          .where('date', isEqualTo: today)
+          .get();
+
+      if (existingRecord.docs.isNotEmpty) {
+        // Update existing record
+        await existingRecord.docs.first.reference.update({
+          'attendanceList': attendanceList,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Create new record
+        await _firestore.collection('savedAttendance').add({
+          'classId': widget.classId,
+          'className': widget.className,
+          'date': today,
+          'attendanceList': attendanceList,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -356,29 +455,96 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
   Future<void> _exportAttendanceList(
       List<Map<String, dynamic>> attendanceList) async {
     try {
-      List<List<dynamic>> rows = [
-        ['Student ID', 'Student Name', 'Status', 'Date']
-      ];
+      await showDialog(
+        context: context,
+        builder: (context) => DateRangePickerDialog(
+          onDateRangeSelected: (startDate, endDate) async {
+            // Fetch saved attendance data from Firestore
+            var savedAttendanceSnapshot = await _firestore
+                .collection('savedAttendance')
+                .where('classId', isEqualTo: widget.classId)
+                .where('date',
+                    isGreaterThanOrEqualTo:
+                        DateFormat('yyyy-MM-dd').format(startDate))
+                .where('date',
+                    isLessThanOrEqualTo:
+                        DateFormat('yyyy-MM-dd').format(endDate))
+                .orderBy('date')
+                .get();
 
-      for (var attendance in attendanceList) {
-        rows.add([
-          attendance['studentId'],
-          attendance['studentName'],
-          attendance['status'],
-          attendance['date'],
-        ]);
-      }
+            // Map to store attendance data by student
+            Map<String, Map<String, String>> studentAttendanceMap = {};
 
-      String csvData = const ListToCsvConverter().convert(rows);
-      final directory = await getExternalStorageDirectory();
-      final file =
-          File('${directory?.path}/attendance_${widget.className}_$today.csv');
-      await file.writeAsString(csvData);
+            for (var doc in savedAttendanceSnapshot.docs) {
+              var data = doc.data();
+              List<dynamic> attendanceList = data['attendanceList'] ?? [];
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Attendance list exported successfully!'),
-          backgroundColor: Colors.green,
+              for (var attendance in attendanceList) {
+                String studentId = attendance['studentId'];
+                String studentName = attendance['studentName'];
+                String status = attendance['status'];
+                String date = attendance['date'];
+
+                // Initialize the student's attendance map if needed
+                studentAttendanceMap.putIfAbsent(
+                    studentId, () => {'Student Name': studentName});
+                studentAttendanceMap[studentId]![date] = status;
+              }
+            }
+
+            // Generate CSV data
+            List<List<dynamic>> rows = [];
+            List<dynamic> headerRow = ['Student Name'];
+
+            DateTime currentDate = startDate;
+            while (currentDate.isBefore(endDate) ||
+                currentDate.isAtSameMomentAs(endDate)) {
+              headerRow.add(DateFormat('MM-dd-yyyy').format(currentDate));
+              currentDate = currentDate.add(const Duration(days: 1));
+            }
+            rows.add(headerRow);
+
+            // Add each student's attendance data
+            studentAttendanceMap.forEach((studentId, attendanceData) {
+              List<dynamic> studentRow = [attendanceData['Student Name']];
+              currentDate = startDate;
+              while (currentDate.isBefore(endDate) ||
+                  currentDate.isAtSameMomentAs(endDate)) {
+                String dateKey = DateFormat('yyyy-MM-dd').format(currentDate);
+                studentRow.add(attendanceData[dateKey] ?? 'N/A');
+                currentDate = currentDate.add(const Duration(days: 1));
+              }
+              rows.add(studentRow);
+            });
+
+            // Convert rows to CSV format
+            String csvData = const ListToCsvConverter().convert(rows);
+
+            // Save the CSV file
+            final directory = await getExternalStorageDirectory();
+            if (directory == null) {
+              throw Exception("External storage directory not found.");
+            }
+
+            final fileName = await _generateFileName();
+            final filePath = '${directory.path}/$fileName';
+            final file = File(filePath);
+            await file.writeAsString(csvData);
+
+            // Share the file
+            final xFile = XFile(file.path);
+            await Share.shareXFiles(
+              [xFile],
+              text: 'Attendance Report for ${widget.className}',
+            );
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Attendance list exported successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          },
         ),
       );
     } catch (e) {
@@ -390,6 +556,18 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
         ),
       );
     }
+  }
+
+  Future<String> _generateFileName() async {
+    final directory = await getExternalStorageDirectory();
+    if (directory == null) return 'attendancerecord1.csv'; // Fallback if null
+
+    int fileNumber = 1;
+    while (File('${directory.path}/attendancerecord$fileNumber.csv')
+        .existsSync()) {
+      fileNumber++;
+    }
+    return 'attendancerecord$fileNumber.csv';
   }
 
   void _showEditDialog(String studentId, String studentName, String status) {
@@ -432,8 +610,8 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                _updateStudentInfo(
+              onPressed: () async {
+                await _updateStudentInfo(
                   studentId,
                   nameController.text,
                   statusController.text.toUpperCase(),
@@ -591,6 +769,89 @@ class _AttendanceDetailsScreenState extends State<AttendanceDetailsScreen> {
           );
         },
       ),
+    );
+  }
+  // ... (Rest of the UI code remains the same)
+}
+
+class DateRangePickerDialog extends StatefulWidget {
+  final Function(DateTime, DateTime) onDateRangeSelected;
+
+  const DateRangePickerDialog({
+    Key? key,
+    required this.onDateRangeSelected,
+  }) : super(key: key);
+
+  @override
+  State<DateRangePickerDialog> createState() => _DateRangePickerDialogState();
+}
+
+class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
+  DateTime? startDate;
+  DateTime? endDate;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Select Date Range',
+          style: GoogleFonts.golosText(fontWeight: FontWeight.bold)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: const Text('Start Date'),
+            subtitle: Text(startDate != null
+                ? DateFormat('yyyy-MM-dd').format(startDate!)
+                : 'Select start date'),
+            onTap: () async {
+              final date = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (date != null) {
+                setState(() => startDate = date);
+              }
+            },
+          ),
+          ListTile(
+            title: const Text('End Date'),
+            subtitle: Text(endDate != null
+                ? DateFormat('yyyy-MM-dd').format(endDate!)
+                : 'Select end date'),
+            onTap: () async {
+              final date = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (date != null) {
+                setState(() => endDate = date);
+              }
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: startDate != null && endDate != null
+              ? () {
+                  widget.onDateRangeSelected(startDate!, endDate!);
+                  Navigator.pop(context);
+                }
+              : null,
+          child: const Text('Export'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue[500],
+          ),
+        ),
+      ],
     );
   }
 }
